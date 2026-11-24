@@ -1,7 +1,8 @@
 # TODO — シェル成立までの手順（安全な順）
 
-危険度の低いものから。A〜C は **PC だけで完結**（カメラ不要）。
-D 以降は実機が必要で、着手前に完全なバックアップをリポジトリ外に取る。
+危険度の低いものから。A と B は**完了**（PC のみの静的解析）。
+C も PC だけで完結する。H・B2・D 以降は実機が必要で、
+着手前に完全なバックアップをリポジトリ外に取る。
 
 ## H. サービス権限レベルを測る【実機・読み取りのみ・最優先】
 
@@ -14,6 +15,8 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_
 ```
 
 - [ ] 出力の `Service level:` を記録する
+- [ ] あわせて `bk r 03000000` が 600 バイト返すか確認する（ホスト鍵の確認。
+      **返ってきた内容は公開しない**）
 - [ ] **A だったら**、続けて `pmca-console.py serviceshell` の `shell` を試し、
       プロンプトが返るか、`grep -E '^(Uid|Gid):' /proc/self/status` が 0 かを確認する
       （書き込みは発生しない。抜けると端末は自動で無効化される）
@@ -21,26 +24,40 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_
       あわせて `push` / `pull` / `bootrom` が実際に拒否されるかも記録する
       （`0xff01` / `0xff03` はどのレベルのテーブルにも無い、という静的判定の裏取り）
 
-## A. telnet フラグの永続化先を確定する【PC のみ】
+## A. telnet フラグの永続化先【完了・2026-11-24】
 
-`libosal_ulogio.so` の `TELN` タグ（[docs/TELNET_ULOGIO.md](docs/TELNET_ULOGIO.md)）が
-ファイル由来なのかバックアップ由来なのかを決める。
+**`/setting/ulogio.bin`（`/dev/nflasha2` vfat rw）の `TELN` レコード。**
+BK4 バックアップ経由ではない（ulogio が使う BK ID はログアドレス用の
+`0x00fa0132` と `0x00fa006e` の2件だけ）。形式も確定し、
+12バイトのファイル1つで足りる。
+詳細： [docs/TELNET_ULOGIO.md](docs/TELNET_ULOGIO.md)、
+生成： `scripts/ulogio_filter_file.py`。
 
-- [ ] `ulogio_filter_load_setting`（VA `0x6010`）の呼び出し元を特定する
-- [ ] `ulogio_get_filterfile`（`.data` の `0x19ad8`）に入るパス文字列を、
-      `bin/ulogio` / `bin/bootin.elf` 側から特定する
-- [ ] `ulogio_read_backup`（VA `0x7428`）に渡る BKID 定数を列挙する
-- [ ] 結論を docs に記録する。**バックアップ由来なら `bk w` だけで
-      telnet が上がる可能性があるので、その時点で優先度が全部入れ替わる**
-      （ただしこれは不揮発への書き込みで、オンメモリではない）
+- [x] `ulogio_filter_load_setting` / `_save_setting` のレコード形式を確定
+- [x] ファイルパスの出所を確定（p3 initrd の `insmod_drv2` のモジュールパラメータ）
+- [x] `ulogio_read_backup` に渡る BK ID を列挙（フィルタ設定は含まれない）
+- [ ] 実機の既存 `/setting/ulogio.bin` を読んで保管する（**上書きする前に必須**）
 
-## B. 公式 sshd の起動引数を特定する【PC のみ】
+## B. 公式 sshd の起動引数とホスト鍵【完了・2026-11-24】
 
-- [ ] `libInfraSSHManager.so` の `startSshd` が組む引数列を読む
-      （`SSHD_START_CMD` の参照元）
-- [ ] 設定ファイルを使うのか、引数だけなのかを決める
-- [ ] `PermitRootLogin` / `AllowUsers` / `Subsystem sftp` の有無を記録する
-- [ ] ホスト鍵がバックアップのどのプロパティに入るか（`updateBackupKey`）を特定する
+**sshd は `/usr/sbin/sshd` を引数なしで起動**するので、設定は
+コンパイル既定の `/etc/ssh/sshd_config`、つまり**書き込み可能な nflasha10**。
+**ホスト秘密鍵はバックアッププロパティ `0x03000000`**（600バイト、
+サブシステム `0x0300`）。詳細： [docs/SSH.md](docs/SSH.md) 5章。
+
+- [x] `startSshd` の引数を確定
+- [x] ホスト鍵のバックアッププロパティと長さを確定
+- [x] アカウントロックが PAM（`pam_tally2`）であることを確認
+
+## B2. /etc の中身を読む【実機・読み取りのみ】
+
+nflasha10 はアップデートパッケージに入っていないので、静的解析では埋まらない。
+Jiritsu の読み取り（レベル A が前提）か、シェルが取れた後に。
+
+- [ ] `/etc/ssh/sshd_config` の有無と中身（`PermitRootLogin`、`Subsystem sftp`）
+- [ ] `/etc/nsswitch.conf` の `passwd:` 行（`files ssh` か）
+- [ ] `/etc/passwd` の中身（`files` が効くなら NSS 改変が不要になりうる）
+- [ ] `/setting/ulogio.bin` の現物（A の最後の項目と同じ）
 
 ## C. 親子接続が PP クラスで有効かを判定する【PC のみ】
 
@@ -76,9 +93,14 @@ E で native 実行が取れた場合は：
 - [ ] 端末でコマンドが返ること、`grep -E '^(Uid|Gid):' /proc/self/status` が
       すべて 0 であることを確認する。marker やハンドシェイクだけでは成功としない
 
-## G. SSH を恒久化する【実機・p15 書き換えを伴う】
+## G. SSH を恒久化する【実機】
 
-F まで到達し、かつ書き戻し手段と復旧手段が確立してから。
+**まず B2 をやること。** sshd の設定とアカウントは書き込み可能な nflasha10
+（`/etc`）側にあるので、**p15 を書き換えずに済む可能性がある**。
+`/etc/passwd` と `/etc/ssh/sshd_config` で足りるなら、以下の p15 改変は不要。
+
+p15 改変が必要だと分かった場合のみ、F まで到達し、かつ書き戻し手段と
+復旧手段が確立してから：
 
 - [ ] 自機の `libnss_ssh.so.2` の SHA-256 が
       `21c29cad…f051e4` と一致することを確認する

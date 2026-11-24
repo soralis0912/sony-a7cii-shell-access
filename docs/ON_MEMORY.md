@@ -118,6 +118,11 @@ p3 initrd の `sbin/initrc/fstab` と `fstab.ext` の実測：
 `/usr/sbin/sshd` はあるが、公式状態では NSS のシェルが `/bin/false`
 （[SSH.md](SSH.md)）。p15 は ro なので差し替えられない。回避は2通り。
 
+なお公式の起動は **`/usr/sbin/sshd` を引数なしで**実行する（確定）。
+つまり公式経路の sshd は `/etc/ssh/sshd_config`、すなわち**不揮発の
+nflasha10** を読む。オンメモリで動かすなら、自分で `-f` を付けて
+`/tmp_wbshd` 配下の設定を指定して起動する必要がある。
+
 ### 5a. シェルを使わない：SFTP だけ
 
 `sbin/sshd` の文字列に `internal-sftp`、`forcecommand`、`permitrootlogin` があり、
@@ -157,11 +162,14 @@ p15 も `/etc/nsswitch.conf` も触らない。再起動で消える。
 `sh` は見えていない。無ければ shell 文字列は `/bin/busybox` 系に合わせて
 長さ制約（7バイト）内で決め直す必要がある）。
 
-## 6. オンメモリ Telnet は向かない
+## 6. オンメモリ Telnet は向かない（確定）
 
-`ulogio telnet up` はフラグを保存して**再起動が必要**（CLI のヘルプにそう書いてある）。
-保存先はまだ特定できていない（[TELNET_ULOGIO.md](TELNET_ULOGIO.md)）ため、
-「オンメモリだけ」の条件には合わない。
+`ulogio telnet up` はフラグを **`/setting/ulogio.bin`**（`/dev/nflasha2` vfat rw）
+に保存し、次の insmod で読み直させる。だから「再起動が必要」。
+保存先が不揮発なので、**定義上オンメモリにならない**
+（形式と根拠は [TELNET_ULOGIO.md](TELNET_ULOGIO.md)）。
+BK4 バックアップ経由でもない（ulogio が使う BK ID はログアドレス用の2件だけ）。
+
 USB 端末が取れるなら、そもそも telnet を上げる必要がない。
 
 プロセス内で `ulogio_telnetd_init` を直接呼べば RAM だけで listener を

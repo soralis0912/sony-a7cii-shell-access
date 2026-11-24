@@ -45,27 +45,90 @@ tlist / ot / it / rewind -- 端末の一覧と入出力先の選択
 という順序。逆に言えば、telnet 自体はシェルを取る手段ではなく、
 取った後に恒久化する手段として最も安い。
 
-## 3. フラグの永続化先（未確定）
+## 3. フラグの永続化先：`/setting/ulogio.bin`（確定）
 
-`ulogio_filter_load_setting`（VA `0x6010`）は 4文字タグの TLV を順に読む。
-逆アセンブルから読めたタグは `TERM`、`TELN`、`TTAG`、`DBGL`、`CFLT`、
-`FLAT`、`FERE`、`FCHK`、`FREV` 系で、`TELN` が telnet フラグに対応する。
+ulogio はカーネルモジュール `kmod/osal_ulogio.ko` が本体で、
+ユーザー空間の `libosal_ulogio.so` は同じフィルタ設定パーサを持つ複製。
+モジュールはフィルタ設定ファイルのパスを **insmod のモジュールパラメータ**で
+受け取る。p3 initrd の `sbin/initrc/insmod_drv2` にその行がある：
 
-設定の入口は2つある：
+```sh
+insmod /usr/kmod/osal_ulogio.ko ulogio_initfile=/setting/ulogio.bin \
+    ulogio_cp_filterfile=/cp/filter.bin
+```
 
-- `ulogio_filter_load_setting_f`（VA `0x62e4`）＝ファイルから。
-  ファイル名は呼び出し側が与える（`ulogio_get_filterfile` は `.data` の
-  `0x19ad8` のポインタを返すだけで、このライブラリ内に literal は無い）。
-  失敗時の文字列は `[ulogio] cannot save filter setting to %s`。
-- `ulogio_read_backup(bkid, buf, size)`（VA `0x7428`）＝BK4 バックアップから。
-  `Backup_get_datasize` と `Backup_read` を外部シンボルとして取り込んでいる。
-  現在確認できている呼び出しは**ログ退避（`/log/cp/*.bin`、`/log/escapelog.bin`）
-  側**で、`TELN` を含むフィルタ設定そのものがバックアップ由来かは未確定。
+| パス | 実体 | 役割 |
+| --- | --- | --- |
+| `/setting/ulogio.bin` | `/dev/nflasha2` vfat rw | フィルタ設定（**telnet フラグを含む**） |
+| `/cp/filter.bin` | `/dev/nflasha8` vfat rw | コプロセッサ側のフィルタ |
 
-ここが確定すれば、「`bk w` だけで telnet を上げられるか」が決まる。
-**もし TELN がバックアップ由来なら、ファームウェアを一切書き換えずに
-telnet root 端末が成立する可能性がある**ので、優先度は最も高い。
-確定作業は静的解析だけで足りる（[TODO.md](../TODO.md) の A）。
+どちらも**不揮発**。つまり `ulogio telnet up` が「再起動が必要」と言うのは、
+フラグをこのファイルに書き、次の insmod で読み直させるため。
+
+**バックアップ（BK4）経由ではない。** モジュールは確かに `Backup_read` /
+`Backup_get_datasize` を import しているが、呼び出し箇所を追うと使っている ID は
+
+| BK ID | サイズ | 使う関数 | 用途 |
+| --- | --- | --- | --- |
+| `0x00fa0132` | 4 | `ulogio_get_logaddr` | ログバッファのアドレス |
+| `0x00fa006e` | 8 | `ulogio_debug_display_add` | デバッグ表示 |
+
+の2件だけで、フィルタ設定（`TELN`）は含まれない。
+**したがって `bk w` だけで telnet を上げることはできない**（前回の仮説は否定された）。
+必要なのは `/setting/ulogio.bin` への**ファイル書き込み**で、それには
+シェルか Jiritsu の `SET_FILE`（＝サービス権限レベル A）が要る。
+
+なお、モジュールは `proc_create_data` で **`/proc/osal/ulogio`** を作り、
+`filterfile : %s` や `Backup API error count : %d` を表示する。
+シェルが取れたなら、現在のフィルタとファイルパスはここで確認できる。
+
+## 3a. ファイル形式（確定）
+
+`ulogio_filter_load_setting`（lib VA `0x6010`）は、ファイル全体を
+**レコードの並び**として読む。各レコードは先頭から：
+
+| オフセット | 型 | 内容 |
+| --- | --- | --- |
+| +0 | u32 | このレコードの長さ（固定長レコードは 12） |
+| +4 | u32 | タグ。ASCII 4文字がファイル上はリトルエンディアン |
+| +8 | u32… | 値 |
+
+カーソルは「レコード先頭 + 長さ」へ進む。認識されるタグと、
+`ulogio_filter_save_setting`（VA `0x6364`）が書く順序：
+
+| 順 | タグ | 内容 |
+| --- | --- | --- |
+| 1 | `DBGL` | デバッグレベル |
+| 2 | `FLTA` | abort フラグ |
+| 3 | `TERM` | 端末出力 |
+| 4 | `EFRE` | efree フラグ |
+| 5 | `TTAG` | タイムタグ種別 |
+| 6 | **`TELN`** | **telnet listener の有効フラグ** |
+| 7 | `PROX` | proxy（u32） |
+| 8 | `SFLT` | サブシステムフィルタ：u32 件数 + 件数分の u32 |
+| 9 | `CFLT` | コンポーネントフィルタ：u32 件数 + 件数分の u64 |
+
+`FVER` レコードも読み側は受け付け、値が `0x10` でなければ
+「unknown version of filter setting」で拒否する。ただし
+**保存側は `FVER` を書かない**（読み側がタグ無しを許すため）。
+
+つまり telnet を上げるだけなら、**12バイトのファイル1つで足りる**：
+
+```
+0c 00 00 00  54 45 4c 4e  01 00 00 00
+   len=12       "TELN"        value=1
+```
+
+生成と確認は `scripts/ulogio_filter_file.py`：
+
+```bash
+python3 scripts/ulogio_filter_file.py --telnet 1 -o /tmp/ulogio.bin
+python3 scripts/ulogio_filter_file.py --parse /tmp/ulogio.bin
+```
+
+既存の `/setting/ulogio.bin` がある機体では、**まず現物を読んで保管し**、
+その内容に `TELN` を足した形に作り直すこと。丸ごと置き換えると
+他のフィルタ設定が消える。
 
 ## 4. 残る前提
 

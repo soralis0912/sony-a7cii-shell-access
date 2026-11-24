@@ -25,7 +25,8 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 | A7C II に SSH サーバは載っているか | **載っている。** `/usr/sbin/sshd` 本体、`ssh-keygen`、ホスト鍵生成スクリプト、セッション監視、アカウントロック記録、NSS モジュール、`libssh2` がすべて 2.01 の p15 に入っている |
 | それは何のための sshd か | 公式機能「親子（マルチカメラ）接続」のサーバ側。機器記述に `X_SSH_Support` / `X_SSH_QRSetupSupport`、バックアップに子機19スロット分の `BKID_APP_PARENT_CHILD_SERVER_CAMERA_SSH_*` がある |
 | A7 IV の SSH 手法はそのまま効くか | **要の1ファイルは完全に同一。** `lib/libnss_ssh.so.2`（10,192 バイト）は A7 IV 6.02 と SHA-256 が一致するので、公開されている8箇所のワードパッチと3つの文字列スロットがバイト単位でそのまま当たる |
-| Telnet はどうか | A7 IV 6.02 より条件が良い。`libosal_ulogio.so` に telnetd の実装（`ulogio_telnetd_init` / `_mainloop` / `ulogio_filter_set_telnet`）が**残っている**ので、旧版からの移植が不要 |
+| Telnet はどうか | A7 IV 6.02 より条件が良い。`libosal_ulogio.so` に telnetd の実装（`ulogio_telnetd_init` / `_mainloop` / `ulogio_filter_set_telnet`）が**残っている**ので、旧版からの移植が不要。有効化フラグの在処も確定：`/setting/ulogio.bin` の `TELN` レコード1件（12バイト）で足り、`bk w` では上げられない |
+| ホスト鍵と sshd の設定はどこか | **確定。** ホスト秘密鍵はバックアッププロパティ `0x03000000`（600バイト、サブシステム `0x0300`）。sshd は引数なしで起動されるので設定は `/etc/ssh/sshd_config`、つまり**書き込み可能な** nflasha10 側にある |
 | では実機でシェルが取れるのか | **まだ取れない。** ただし恒久的な書き込みを伴わない経路が1つ見つかった（下記） |
 | 書き込みゼロで端末が取れるか | **サービス権限レベル A（`adjCodeLevel == 3`）なら取れる見込み。** 端末ゲートはレベル A のときだけ開き、カメラのコンソールには初めから `ash --login` が走っている。レベル B/C だと TestMode も使えず行き止まり。判定は `scripts/probe_service_level.py`（読み取りのみ）。詳細は [docs/ON_MEMORY.md](docs/ON_MEMORY.md) |
 
@@ -61,6 +62,13 @@ python3 scripts/collect_shell_components.py \
 ```
 
 出力例と確定値は [evidence/component-inventory-a7cii-201.json](evidence/component-inventory-a7cii-201.json)。
+
+telnet フラグのファイルは、生成も確認もオフラインでできます。
+
+```bash
+python3 scripts/ulogio_filter_file.py --telnet 1 -o /tmp/ulogio.bin
+python3 scripts/ulogio_filter_file.py --parse /tmp/ulogio.bin
+```
 
 実機側は、サービスモードで権限レベルだけを測る読み取り専用プローブがあります
 （バックアップにもファイルにも書きません）。

@@ -112,13 +112,97 @@ sshd を起動する。A7C II のファイルはハッシュが違うが寸法�
 `bootin.elf` は `ulogio` も参照しており、起動時の初期化を担っている。
 A7C II 向けには、この寸法を前提にフックを再導出すればよい見込み。
 
-## 5. まだ分かっていないこと
+## 5. 起動コマンドと鍵の在処（確定、2026-11-24）
 
-1. 公式 `SSHD_START_CMD` が実際に渡している引数と設定（最重要）。
-2. 親子接続が ILCE-7CM2（`PRODUCT_MODEL_PP`）で有効か。feature manager 側に
+`lib/libInfraSSHManager.so` を逆アセンブルして、前回「未判明」としていた
+2点が確定した。
+
+### 5a. sshd は引数なしで起動される
+
+`SshFunctionWrapperImpl::startSshd()`（VA `0x908c`）は
+`executeIMSystem()` に文字列 `/usr/sbin/sshd`（`.rodata` の `0xb172`）を
+そのまま渡すだけ。**`-f` も `-E` も付かない。**
+
+```asm
+90bc:  adrp x1, 0xb000
+90c4:  add  x1, x1, #0x172      ; "/usr/sbin/sshd"
+90cc:  bl   executeIMSystem(const char*, int&)
+```
+
+停止側は `/bin/busybox killall sshd`（`0xb0ef`）。
+
+したがって sshd は**コンパイル時の既定**で動く。バイナリの文字列から：
+
+| 既定 | 値 |
+| --- | --- |
+| 設定ファイル | `/etc/ssh/sshd_config` |
+| ホスト鍵 | `/etc/ssh/ssh_host_{ecdsa,ed25519,rsa}_key` |
+| その他 | `/etc/ssh/moduli`、`/etc/nologin`、`/etc/motd`、`/bin/sh /etc/ssh/sshrc` |
+
+**ここが効いてくる点：`/etc` は p15（読み取り専用）ではない。**
+p3 initrd の `sbin/initrc/fstab.ext` は
+
+```text
+/dev/nflasha10	/etc	vfat	rw,nodiratime,noatime,sync,posix_attr	0	0
+/dev/nflasha10	/var	vfat	rw,nodiratime,noatime,sync,posix_attr	0	0
+```
+
+で、`/etc` は**書き込み可能な不揮発パーティション**。
+`sshd_config` も `nsswitch.conf` も `passwd` もそこにあるので、
+**p15 を書き換えずに sshd の設定を変えられる可能性が高い**。
+`PermitRootLogin` や `Subsystem sftp internal-sftp` を足すのに
+ファームウェア改変が要らないかもしれない、ということ。
+
+ただし **nflasha10 の中身はアップデートパッケージに入っていない**ので、
+実際に何が置かれているか（`/etc/ssh/sshd_config` が存在するのか、
+`/etc/passwd` に何が入っているのか、`nsswitch.conf` の `passwd:` 行が
+`files ssh` なのか）は**実機を読まないと分からない**。
+読み取り専用で確かめる項目として [TODO.md](../TODO.md) に入れた。
+
+アカウントロックは PAM で、`/sbin/pam_tally2 --reset -u `（`0xb058`）を
+`PAM_FAILURE_COUNT_RESET_CMD` として持っている。
+失敗回数は `/tmp_network/ssh/ssh_auth_failed_count`、
+セッション数は `/tmp_network/ssh/ssh_session_count`。
+
+### 5b. ホスト秘密鍵はバックアップに入っている
+
+`SshFunctionWrapperImpl::createKeyFromBackup()`（VA `0x885c`）：
+
+```asm
+88b0:  mov  w0, #0x3000000      ; BK ID
+88ac:  mov  w2, #0x258          ; 600 bytes
+88b4:  bl   Backup_nread
+...                             ; 読めたら
+8920:  ... "/tmp_network/ssh/ssh_host_ecdsa_key" を fopen して書き出し
+8998:  mov  w1, #0x180          ; chmod 0600
+```
+
+`updateBackupKey()`（VA `0x97e8`）はその逆向きで、鍵データが 600 バイト以下で
+あることを確かめてから `Backup_write(0x300, 0x03000000, buf)` を呼び、
+`Backup_sync_subsystem(0x300)` で確定する。
+
+| 項目 | 値 |
+| --- | --- |
+| バックアッププロパティ | **`0x03000000`** |
+| サブシステム | `0x0300` |
+| 長さ | 600 バイト（バッファは 601、NUL 終端込み） |
+| 中身 | ECDSA-256 のホスト**秘密**鍵（`create_host_key.sh` が作る、パスフレーズなし） |
+
+実機では `bk r 03000000` で読める見込み。**読んだ内容は公開しないこと**
+（その機体のホスト鍵そのもの）。逆に `bk w` で自分の鍵を入れることもできる
+はずで、これはファームウェアを触らずにホスト鍵を差し替えられるという意味になる。
+
+## 6. まだ分かっていないこと
+
+
+1. `/etc/ssh/sshd_config` が実機に存在するか、存在するなら中身は何か。
+   `PermitRootLogin` と `Subsystem sftp` の有無で、必要な改変量が変わる。
+2. `/etc/nsswitch.conf` の `passwd:` 行に `ssh` が入っているか。
+   `files` も効くなら、`/etc/passwd` にアカウントを足すだけで済む可能性がある。
+3. 親子接続が ILCE-7CM2（`PRODUCT_MODEL_PP`）で有効か。feature manager 側に
    SSH / 親子接続の可否フラグは見つかっていない。
-3. `BKID_APP_PARENT_CHILD_SERVER_CAMERA_SSH_*` を `bk w` で立てたときに、
+4. `BKID_APP_PARENT_CHILD_SERVER_CAMERA_SSH_*` を `bk w` で立てたときに、
    メニューに出ないまま sshd が起きるのか、メニュー側の判定が先に効くのか。
-4. ホスト鍵がバックアップのどのプロパティに入るのか（`updateBackupKey` の参照先）。
 
-1 と 4 は静的解析で埋まる。2 と 3 は実機のプロパティ実験（1件ずつ、復旧確認付き）。
+1 と 2 は実機の**読み取り**で埋まる（nflasha10 はパッケージに入っていない）。
+3 と 4 は実機のプロパティ実験（1件ずつ、復旧確認付き）。
