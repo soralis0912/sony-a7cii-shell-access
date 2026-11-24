@@ -197,7 +197,37 @@ being 50 consecutive ids:
 that is the right shape for the name the menu shows.
 
 `scripts/read_user_lut_slots.py` reads all 250 properties and prints the slots
-that differ from those defaults. Import a LUT through the camera's own menu
-first; whatever it changed is the registration recipe, and that is what a slot
-would need to be given for a LUT written straight into `/usr/data/lut` to
-appear. `LUT001.cube` is already sitting there for that test.
+that differ from those defaults.
+
+### The registration recipe, read off the camera after an import
+
+Importing `SWAPTEST.cube` through the menu changed exactly two properties in
+slot 0:
+
+    IS_EXIST            0x02cf105c  01
+    FILE_ID             0x02cf106c  53574150544553542e63756265 00 00 ...   "SWAPTEST.cube"
+    ATTR_INPUT_GAMUT    0x02cf107c  01      (default, untouched)
+    ATTR_OUTPUT_PROCAM  0x02cf1450  00      (default, untouched)
+    ATTR_AE_LEVEL_OFF   0x02cf104c  00      (default, untouched)
+
+So registering a slot is two writes: the flag, and the **display name** -
+`FILE_ID` holds the imported file's own name, extension included, as ASCII
+padded with NULs to 64 bytes. The three attribute fields can be left alone.
+
+This also confirms the one-based numbering from the other direction. Slot 0's
+name is `SWAPTEST.cube` while the file the camera reads is
+`/usr/data/lut/LUT001.cube` - the import wrote the content there, exactly where
+`add w4, w0, #1` said it would.
+
+So a LUT can be added without the card: write `/usr/data/lut/LUT00<n+1>.cube`,
+then set `IS_EXIST_USER_LUT<n>` and `USER_LUT_FILE_ID<n>`. The file half needs
+only the shell; the two properties need the backup, so either service mode or
+whatever `/setting/Backup.bin` turns out to allow.
+
+### Only 16 slots exist on this model
+
+The inventory lists 50 slots and gives every one of them the same firmware
+default, but this camera answers for only the first 16. The rest come back
+empty rather than as an error, which the first version of the reader wrongly
+counted as "changed" - hence a nonsense report of slots 16..49 all differing.
+The script now reports those separately as not provisioned.

@@ -43,6 +43,17 @@ FAMILIES = [
 SLOTS = 50
 
 
+def absent(data) -> bool:
+    """True when the camera gave us no value for a property.
+
+    Reading a slot this model does not provision comes back empty rather than
+    as an error, and an empty answer must not be mistaken for a changed one -
+    the first version of this script counted slots 16..49 as "changed" for
+    exactly that reason.
+    """
+    return data is None or (isinstance(data, (bytes, bytearray)) and len(data) == 0)
+
+
 def hexs(data) -> str:
     if data is None:
         return "(no value)"
@@ -64,6 +75,7 @@ def printable(data) -> str:
 def read_slots(camera, slots: int, show_all: bool) -> None:
     print("slots read: 0..%d" % (slots - 1))
     interesting = []
+    missing = []
     values = {}
     for name, base, default in FAMILIES:
         for n in range(slots):
@@ -75,14 +87,20 @@ def read_slots(camera, slots: int, show_all: bool) -> None:
             else:
                 err = None
             values[(name, n)] = (raw, err)
-            if err is None and hexs(raw) != default and n not in interesting:
+            if err is None and not absent(raw) and hexs(raw) != default \
+                    and n not in interesting:
                 interesting.append(n)
+            if (err is not None or absent(raw)) and n not in missing:
+                missing.append(n)
 
     if interesting:
         print("\nslots that differ from the firmware default: %s"
               % ", ".join(str(n) for n in sorted(interesting)))
     else:
         print("\nevery slot still holds the firmware default - nothing registered")
+    if missing:
+        print("slots the camera returned nothing for, i.e. not provisioned on "
+              "this model: %s" % ", ".join(str(n) for n in sorted(missing)))
 
     to_show = sorted(set(interesting) | ({0, 1, 2, 3} if not show_all else set(range(slots))))
     for n in to_show:
@@ -91,6 +109,10 @@ def read_slots(camera, slots: int, show_all: bool) -> None:
             raw, err = values[(name, n)]
             if err is not None:
                 print("  %-19s 0x%08x  read failed: %s" % (name, base + n, err))
+                continue
+            if absent(raw):
+                print("  %-19s 0x%08x  (no value - not provisioned)"
+                      % (name, base + n))
                 continue
             h = hexs(raw)
             mark = "" if h == default else "   <-- changed"
