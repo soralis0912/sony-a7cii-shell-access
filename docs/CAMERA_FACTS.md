@@ -77,16 +77,53 @@ drw-r-xr-x  2 root 0  120 Jan  1 00:53 .
 バックアッププロパティ `0x03000000`（600 バイト枠、非ゼロ 505 バイト）と一致する。
 つまり `createKeyFromBackup` が起動時に走り、鍵が配置されている。
 `ssh_name_password`（82 バイト）も存在する——`libnss_ssh.so.2` が読む
-`name,x` 形式のアカウント定義ファイル。
+アカウント定義ファイル。
+
+**形式の訂正：`name,x` ではない。** A7 IV 側の記録では第2欄は
+使えないプレースホルダ `x` とされていたが、この機体の実物は
+
+```text
+<ユーザー名>,$5$rounds=5000$<salt>$<hash>
+```
+
+で、**第2欄は実在する SHA-256-crypt のパスワードハッシュ**。
+`sshd_config` が `UsePAM yes` ＋ `ChallengeResponseAuthentication yes` なので、
+親子接続はこのハッシュに対する認証でログインする設計と読める。
+
+> **この中身は資格情報なので、本リポジトリには記録しない。**
+> 実機で読むときも、出力をそのまま貼らないこと。
 
 **sshd は走っていないが、材料は揃っている。**
 
-### busybox は applet が削られている
+### busybox の applet 一覧（実測）
 
-`/bin/sh` は busybox だが、**`tr` / `head` / `df` / `id` は入っていない**。
-`ls` / `cat` / `echo` / `ps` / `uname` / `grep` / `sed` などは使える
-（`/bin` の一覧は [FIELD_SESSION.md](FIELD_SESSION.md) 側の記録参照）。
-`/etc` を編集する方法を決めるには `busybox --list` を見る必要がある。
+**入っていないもの**：`tr` `head` `df` `id` `vi` `awk` `nc` `wget` `curl` `find` `ssh`
+
+**入っていて効くもの**（抜粋）：
+
+| 分類 | applet |
+| --- | --- |
+| 編集・加工 | `sed` `cut` `paste` `sort` `uniq` `nl` `wc` `xargs` `tail` `xxd` **`hexedit`** |
+| ファイル | `cat` `cp` `mv` `rm` `ln` `chmod` `chown` `chgrp` `mkdir` `touch` `dd` `tar` `cpio` `md5sum` `sha1sum` `shred` `readlink` `mktemp` |
+| プロセス | `ps` `kill` `killall` `pidof` `taskset` `setpriv` `nproc` `chroot` |
+| ネットワーク | `ifconfig` `route` `ping` `ping6` **`telnet`** **`telnetd`** `ftpget` `ftpput` `ssl_client` `vconfig` `tc` |
+| システム | `mount` `umount` `insmod` `rmmod` `lsmod` `modprobe` `mdev` `syslogd` `klogd` `dmesg` `stty` `getty` `login` `nologin` `init` `reboot` `poweroff` `halt` `switch_root` `pivot_root` `sfdisk` `partprobe` `freeramdisk` `swapon` `swapoff` |
+
+**`telnetd` が入っている。** busybox の `telnetd -l /bin/sh` は
+アカウントを介さずに指定したプログラムを直接起動するので、
+**`/etc` を一切変更せずに TCP 経由の対話シェルが立つ**。
+ulogio の telnet を追う必要はなかった。到達には IP 経路（Wi-Fi）が必要。
+
+### `/etc` と `/var` は同じファイルシステム
+
+`/var` の中身が `passwd`（124 バイト）・`nsswitch.conf`（280 バイト）・
+`ssh/`・`pam.d/`・`protocols`・`services` で、`/etc` と一致する。
+`/proc/mounts` でも nflasha10 が `/etc` と `/var` の両方にマウントされている。
+つまり `/var/passwd` と `/etc/passwd` は同一ファイル。
+
+その他：`/var/mtab` は `../proc/mounts` へのリンク、
+`/var/kikilog.dat` は 4.2 MB、`/var/jiritsu` は `dr-x------`。
+`/root` は uid 57285 / gid 1000 所有で `chassis` と `common.src` の2ファイルだけ。
 
 ### SSH の現状
 
