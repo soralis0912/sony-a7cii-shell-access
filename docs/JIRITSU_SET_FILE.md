@@ -90,12 +90,77 @@ if ( strcmp(v8, "/tmp/jiritsu/libJit.so") == 0 ) {
 - 書き込み先は p6（`/dev/nflasha6`）の vfat で、**撮影データや調整値の
   パーティションではない**。とはいえ `FORMAT` を誤爆すればそこを消す。
 
+
+## 読み込み側の実装（独立検証、2026-11-24）
+
+`SET_FILE` の `dlopen` は確認できた（`adj_cmd_set_file` @ `0x9038` から
+`0x9260`、`adj_cmd_set_file2` @ `0x986c` から `0x9c4c`）。
+加えて **専用の読み込みスレッド `IM_JIRITSU::CImJiritsu::jit_thread`**
+（`0xbc74`）があり、こちらが本来の経路。IDA でデコンパイルした結果：
+
+```c
+ramdisk_mount("/tmp/jiritsu/ramdsk_libJit", "size=5M");          // 失敗 → 11
+sys_file_copy(<置いたファイル>, "/tmp/jiritsu/ramdsk_libJit/libJit.so");  // 失敗 → 21
+handle = dlopen("/tmp/jiritsu/ramdsk_libJit/libJit.so", 1);      // RTLD_LAZY、失敗 → 18
+create = dlsym(handle, "CreateScriptI");                         // 無ければ 20
+obj    = create(...);                                            // 0 を返すと "create fail" → 16
+load   = dlsym(handle, "LoadScriptI");                           // 無ければ 19
+run    = dlsym(handle, "RunScriptI");                            // 無ければ 20 系
+...                                                              // "libJit.so crashed."
+```
+
+**重要な点が3つ。**
+
+1. **`libJit.so` は 5 MB の ramdisk にコピーされてから `dlopen` される。**
+   書き込んだ `/tmp/jiritsu/libJit.so` が直接読まれるのではない。
+   ロードされる実体は RAM 上なので、**フラッシュには何も残らない**。
+2. **コンストラクタだけでは足りない。** サービスは
+   **`CreateScriptI` / `LoadScriptI` / `RunScriptI` の3つを `dlsym` する**。
+   どれか欠けるとエラーコードを返して読み込みを中止する
+   （`CreateScriptI` 無し → 20、`LoadScriptI` 無し → 19）。
+   さらに `CreateScriptI()` が **0 以外を返さないと** `create fail`（16）になる。
+   つまり最小の `libJit.so` は、この3シンボルをエクスポートし、
+   `CreateScriptI` が非ゼロを返す必要がある。
+   コンストラクタ（`__attribute__((constructor))`）は `dlopen` の時点で走るので、
+   「コードを走らせる」目的ならそこで用が済むが、**3シンボルを用意しないと
+   その後のログがエラーになる**（コンストラクタ自体は実行済み）。
+3. `stat` の結果によっては `/tmp/jmode` を `open` する分岐がある。
+   動作モードがそのファイルで切り替わる見込み（未解析）。
+
+ログ文字列（`[JIT] ramdisk_mount B.` / `[JIT] libJit_so copy B.` /
+`[JIT] libJit_so dll open B.` / `[JIT] libJit_so method load CreateScriptI B.` /
+`[JIT] libJit_so method run CreateScriptI B.` / `libJit.so crashed.`）が
+`/tmp/jiritsu/jit.log` に出るはずなので、**失敗しても `GET_FILE2` で
+番号3（jit.log）を読めば原因が分かる**（fork の表では番号3は拒否とあるので、
+その場合は `SET_FILE_PATH` + `GET_FILE2` のパス指定側で読む）。
+
+### 最小の `libJit.so` の形
+
+```c
+/* aarch64-linux-gnu-gcc -shared -fPIC -o libJit.so jit.c */
+#include <stdio.h>
+
+__attribute__((constructor))
+static void boot(void)            /* dlopen の時点で走る */
+{
+    FILE *f = fopen("/tmp/jiritsu/hello.txt", "w");
+    if (f) { fputs("ok\n", f); fclose(f); }
+}
+
+void *CreateScriptI(void *a) { (void)a; return (void *)1; }  /* 非ゼロ必須 */
+int   LoadScriptI(void *a)   { (void)a; return 0; }
+int   RunScriptI(void *a)    { (void)a; return 0; }
+```
+
+ターゲットは p7 の glibc 2.25 / aarch64。`/tmp/jiritsu` 配下に書いたものは
+`GET_FILE2` で読み戻せるので、**コンストラクタが走ったことを実機で確認できる**。
+
 ## 次にやること
 
 1. 【PC】`unk_47AD8` の34件の表を展開し、残りのファイル名を確認する。
-2. 【PC】最小の `libJit.so` を作る。aarch64 向け共有ライブラリで、
-   コンストラクタで `/tmp/jiritsu/` に短いファイルを1つ書くだけのもの。
-   クロスツールチェインが必要。
+2. 【PC】最小の `libJit.so` を作る。**`CreateScriptI` / `LoadScriptI` /
+   `RunScriptI` の3つをエクスポートし、`CreateScriptI` は非ゼロを返す**こと
+   （上記「最小の `libJit.so` の形」）。aarch64 のクロスツールチェインが必要。
 3. 【実機】`SET_FILE` を**番号2・モード0**で送り、戻り値を確認する。
 4. 【実機】`SET_FILE_PATH` + `GET_FILE2` で、置いたファイルが
    書かれていること（＝コンストラクタが走ったこと）を読み戻して確かめる。
