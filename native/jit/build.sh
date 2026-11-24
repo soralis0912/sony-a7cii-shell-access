@@ -1,47 +1,42 @@
 #!/bin/sh
-# Build libJit.so for the camera: aarch64, Linux, glibc 2.25 (p7's runtime).
+# Build libJit.so for the camera (aarch64 Linux).
 #
-# Nothing here is installed for you. Pick whichever of these you already have.
+# Two sources, two toolchains:
 #
-#   1. A cross compiler on the host:
-#        aarch64-linux-gnu-gcc -shared -fPIC -O1 -o libJit.so jit.c
-#      (Homebrew: `brew install aarch64-elf-gcc` is the wrong one - it targets
-#      bare metal, not Linux. A glibc cross toolchain is what is needed.)
+#   jit_nolibc.c   no libc at all, raw syscalls. Builds with the bare-metal
+#                  toolchain from Homebrew core:
+#                      brew install aarch64-elf-gcc
+#                  The result has no DT_NEEDED, so the camera's glibc version
+#                  cannot be a problem. This is the default.
 #
-#   2. A container, which on an Apple Silicon host runs aarch64 natively:
-#        docker run --rm -v "$PWD:/src" -w /src --platform linux/arm64 \
-#          gcc:12 gcc -shared -fPIC -O1 -o libJit.so jit.c
-#      This pulls an image the first time.
+#   jit.c          the readable libc version. Needs a glibc cross toolchain:
+#                      brew tap messense/macos-cross-toolchains
+#                      brew trust messense/macos-cross-toolchains   # third-party tap
+#                      brew install aarch64-unknown-linux-gnu
+#                  Homebrew refuses to load that tap's formulae until it is
+#                  trusted, which is a decision for whoever runs this. If it is
+#                  installed, this script prefers it.
 #
-#   3. clang with lld, if you have a Linux sysroot for aarch64:
-#        clang -target aarch64-unknown-linux-gnu --sysroot <sysroot> \
-#          -fuse-ld=lld -shared -fPIC -O1 -o libJit.so jit.c
-#
-# Apple clang alone cannot do it: it has no ELF linker (no ld.lld), so it can
-# compile the object but not link the shared library.
+# Apple clang cannot do either: no ELF linker (no ld.lld) is installed with it.
 set -e
 cd "$(dirname "$0")"
+PATH="/opt/homebrew/bin:$PATH"
+export PATH
 
-if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
-    aarch64-linux-gnu-gcc -shared -fPIC -O1 -o libJit.so jit.c
+if command -v aarch64-unknown-linux-gnu-gcc >/dev/null 2>&1; then
+    echo "building jit.c with the glibc cross toolchain"
+    aarch64-unknown-linux-gnu-gcc -shared -fPIC -O1 -Wall -o libJit.so jit.c
+elif command -v aarch64-elf-gcc >/dev/null 2>&1; then
+    echo "building jit_nolibc.c with aarch64-elf-gcc (no libc)"
+    aarch64-elf-gcc -shared -fPIC -nostdlib -O1 -Wall -o libJit.so jit_nolibc.c
 elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    echo "building jit.c in a linux/arm64 container"
     docker run --rm -v "$PWD:/src" -w /src --platform linux/arm64 \
         gcc:12 gcc -shared -fPIC -O1 -o libJit.so jit.c
 else
-    echo "no aarch64 Linux toolchain and no running Docker; see the comments" >&2
+    echo "no aarch64 toolchain and no running Docker; see the comments above" >&2
     exit 1
 fi
 
-echo "built:"
 ls -l libJit.so
-command -v file >/dev/null 2>&1 && file libJit.so
-
-echo
-echo "check the three symbols are exported:"
-for s in CreateScriptI LoadScriptI RunScriptI; do
-    if command -v nm >/dev/null 2>&1 && nm -D libJit.so 2>/dev/null | grep -q " $s$"; then
-        echo "  $s ok"
-    else
-        printf '  %s: verify by hand (nm -D libJit.so)\n' "$s"
-    fi
-done
+exec ./check.sh libJit.so
