@@ -78,19 +78,79 @@ as `busybox md5sum` and so on. This is the same trap as `telnetd`.
 
 `tr` is absent from the list itself, so no spelling of it works.
 
+## How the camera actually finds user LUTs
+
+The menu's custom-LUT slots all read "none" even with a correctly formatted
+970 KB `.cube` sitting in `/usr/data/lut`. The four entries that *are* named and
+selectable are the stock `S709`, `S709C`, `r709` and `r709C` - the four files
+that ship in that directory. So the camera does not scan the directory for user
+LUTs; it looks for fixed names.
+
+`lib/appFw.so` in the root filesystem (100 MB, stripped) holds the proof. Both
+path formats are referenced from one pair of thunks, at 0x302040c and
+0x3020430:
+
+    0x0302040c  mov   x5, x1
+    0x03020410  adrp  x3, #0x4bfa000
+    0x03020414  adrp  x2, #0x4bfa000
+    0x03020418  add   w4, w0, #1
+    0x0302041c  add   x3, x3, #0x3d3      ; "/usr/data/lut"
+    0x03020420  add   x2, x2, #0x3e1      ; "%s/LUT%03d.cube"
+    0x03020424  mov   x0, x5
+    0x03020428  mov   x1, #0x1a
+    0x0302042c  b     #0x165ded0          ; snprintf
+
+So the filename is `/usr/data/lut/LUT%03d.cube`, and `add w4, w0, #1` means the
+number is the slot index **plus one** - slot 0 is `LUT001.cube`. The buffer size
+`#0x1a` is 26, exactly `strlen("/usr/data/lut/LUT001.cube") + 1`, which confirms
+the composition. The second thunk is identical but uses `%s/LUT%03d.LUT` at
+0x4bfa3b2, so a second extension exists alongside the text one.
+
+The neighbouring strings name the rest of the mechanism:
+
+    0x4bfa390  mount_lut_folder():NG
+    0x4bfa3a6  %lf %lf %lf                 <- the data-line parser
+    0x4bfa3b2  %s/LUT%03d.LUT
+    0x4bfa3c1  /usr/data/lut/AAA
+    0x4bfa3d3  /usr/data/lut
+    0x4bfa3e1  %s/LUT%03d.cube
+    0x4bfa3f1  /Private/Sony/PRO/LUT       <- the import source, on the card
+    0x4bfa407  SL3SG3CtoR709-800.cube
+
+`%lf %lf %lf` is how each line is read, so the six-decimal formatting is not
+load-bearing - any `scanf`-parseable triple works.
+
+### There is a supported import path
+
+`/Private/Sony/PRO/LUT` is a directory on the **memory card**. Putting a `.cube`
+there and using the camera's own LUT import menu is the route Sony built, and
+it is what writes the backup properties the slots depend on:
+
+    BKID_APP_IS_EXIST_USER_LUT<n>              IS_EXIST_USER_LUT_EMPTY / _EXIST
+    BKID_APP_USER_LUT_FILE_ID<n>
+    BKID_APP_USER_LUT_ATTR_INPUT_GAMUT<n>
+    BKID_APP_USER_LUT_ATTR_OUTPUT_PROCAM<n>
+    BKID_APP_USER_LUT_ATTR_AE_LEVEL_OFFSET<n>
+
+On a FAT card the path is `PRIVATE/SONY/PRO/LUT`. Other strings in the same
+area - `CUBE_FILE_OPERATION_DESTINATION_MEDIA`, `..._CLOUD_PRIVATE`,
+`..._CLOUD_SHARE`, `EVENT_REMOTE_CUBE_FILE_CLOUD_DOWNLOAD_LIST` - show the
+import can also come from Creators' Cloud.
+
+So testing a generated LUT needs no service mode and no shell at all. The
+shell route is only interesting for the question below.
+
 ## What is still open
 
-Whether the menu lists a LUT that was merely dropped into the directory. The
-feature-research repository's BKID inventory has `BKID_APP_IS_EXIST_USER_LUT0`
-through `49`, plus `USER_LUT_FILE_ID` and `USER_LUT_ATTR_*` — 50 slots of
-backup properties. If the camera trusts that index instead of reading the
-directory, a new file will not appear until a slot is registered, and the
-import path in the menu is what writes those slots.
+Whether writing `/usr/data/lut/LUT001.cube` directly and cold-booting makes
+slot 0 register itself, or whether `BKID_APP_IS_EXIST_USER_LUT0` has to be set
+first. `test.cube` proved the directory is writable but told us nothing about
+this, because the name was never one the camera looks for.
 
-The fallback experiment avoids the question entirely: overwrite `r709C.cube`
+The fallback experiment avoids registration entirely: overwrite `r709C.cube`
 with the `swap` LUT, keeping the original, and see whether selecting the
-*stock* entry gives swapped colour. That tests the rendering pipeline without
-needing registration.
+*stock* entry gives swapped colour. That tests the rendering pipeline on its
+own.
 
 ```
 cp /usr/data/lut/r709C.cube /usr/data/lut/r709C.cube.orig
