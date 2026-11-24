@@ -29,6 +29,51 @@ fine to share, the key is not, and /etc/passwd may carry password hashes.
 """
 from __future__ import annotations
 
+
+def _bootstrap_pmca() -> str:
+    """Make the `pmca` package importable and say where it was found.
+
+    Python puts this script's own directory on sys.path, not the directory you
+    ran it from, so `cd`-ing into a Sony-PMCA-RE checkout is not enough on its
+    own. Look, in order, at --pmca-root, $PMCA_ROOT, the current directory, and
+    a Sony-PMCA-RE checkout sitting next to this repository. sudo strips
+    PYTHONPATH, which is why the current directory matters.
+    """
+    import os
+    import sys
+    from pathlib import Path
+
+    tried = []
+    roots = []
+
+    argv = sys.argv[1:]
+    if "--pmca-root" in argv:
+        i = argv.index("--pmca-root")
+        if i + 1 < len(argv):
+            roots.append(argv[i + 1])
+            del argv[i:i + 2]
+            sys.argv[1:] = argv
+    if os.environ.get("PMCA_ROOT"):
+        roots.append(os.environ["PMCA_ROOT"])
+    roots.append(os.getcwd())
+    here = globals().get("__file__")
+    if here:
+        roots.append(str(Path(here).resolve().parents[2] / "Sony-PMCA-RE"))
+
+    for root in roots:
+        path = Path(root).expanduser()
+        tried.append(str(path))
+        if (path / "pmca" / "__init__.py").is_file():
+            sys.path.insert(0, str(path.resolve()))
+            return str(path.resolve())
+
+    sys.exit("Could not find the `pmca` package. Looked in:\n  %s\n"
+             "Pass --pmca-root /path/to/Sony-PMCA-RE, or run this from that "
+             "checkout." % "\n  ".join(tried))
+
+
+PMCA_ROOT = _bootstrap_pmca()
+
 import argparse
 import datetime
 import hashlib
@@ -267,12 +312,8 @@ def main() -> int:
         "a7cii-survey-%s.txt" % datetime.date.today().isoformat())
     args.dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        from pmca.commands.usb import senserShellCommand
-    except ImportError:
-        print("Run this from a Sony-PMCA-RE checkout so that `pmca` is importable.",
-              file=sys.stderr)
-        return 2
+    from pmca.commands.usb import senserShellCommand
+    print("using pmca from %s" % PMCA_ROOT, flush=True)
 
     report = Report(out)
     done = False

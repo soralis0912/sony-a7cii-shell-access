@@ -24,6 +24,11 @@ cd ~/git/a7c2/Sony-PMCA-RE
 sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/survey_readonly.py
 ```
 
+スクリプトは `pmca` パッケージを `--pmca-root` → `$PMCA_ROOT` →
+カレントディレクトリ → このリポジトリの隣の `Sony-PMCA-RE` の順に探す。
+別の場所から走らせるなら `--pmca-root ~/git/a7c2/Sony-PMCA-RE` を付ける
+（sudo は `PYTHONPATH` を落とすので、環境変数は当てにしない）。
+
 - [ ] 出てきた `a7cii-survey-<日付>.txt` をそのまま貼る
 - 途中で「マスストレージに入り直せ」と言われたら、背面の中央ボタンを押して
       接続し直す（PMCA のサービスモード切替は何度か往復する）

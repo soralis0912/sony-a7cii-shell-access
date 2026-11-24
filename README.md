@@ -82,6 +82,8 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/survey_readonl
 ```
 
 権限レベルだけを測りたいときは `scripts/probe_service_level.py`。
+どちらも `pmca` を `--pmca-root` → `$PMCA_ROOT` → カレントディレクトリ →
+隣の `Sony-PMCA-RE` の順に探す。
 
 ## 含めないもの
 
