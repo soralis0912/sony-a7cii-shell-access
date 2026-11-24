@@ -7,6 +7,7 @@
 | --- | --- |
 | `jit.c` | コンストラクタで `/tmp/jiritsu/jit_hello.txt` に pid/uid/euid を書く。`CreateScriptI` / `LoadScriptI` / `RunScriptI` をエクスポートし、`CreateScriptI` は非ゼロを返す |
 | `build.sh` | aarch64 Linux 向けにビルドする。クロスコンパイラか Docker のどちらかを使う |
+| `check.sh` | 出来たものがカメラで読めるかを検証する。3シンボルの有無と、**要求 glibc バージョンが 2.25 以下か** |
 
 **このリポジトリにバイナリは置かない**（`.gitignore` が `*.so` を除外している）。
 各自でビルドすること。
@@ -23,9 +24,24 @@
 
 `build.sh` は 1 → 2 の順に自動で選ぶ。どちらも無ければ理由を出して終了する。
 
+## glibc のバージョンに注意
+
+カメラのルートは **glibc 2.25**（p7 の `lib/libc-2.25.so`）で、Sony 自身の
+ライブラリは `GLIBC_2.17` のシンボルを要求している。新しい glibc で
+ビルドしたものは、存在しないシンボルバージョンを要求して**読み込みに失敗する**。
+しかもその失敗はプロトコル側の問題のように見えるので、先に潰しておく：
+
+```bash
+./check.sh          # 3シンボル＋要求 glibc が 2.25 以下かを確認
+```
+
+`aarch64-elf-gcc`（homebrew-core）はベアメタル向けで glibc が無いため、
+`jit.c` をそのままビルドできない。glibc 向けのクロスツールチェイン
+（`messense/macos-cross-toolchains` の `aarch64-unknown-linux-gnu`）を使う。
+
 ## 実機で使うときの順番
 
-1. ビルドして `nm -D libJit.so` で3シンボルを確認する
+1. ビルドして `./check.sh` を通す
 2. `SET_FILE`（カテゴリ `0x1001` / コマンド `0x4007`）で**番号2・モード0**として送る
 3. 戻り値を確認する（失敗コードは
    [../../docs/JIRITSU_SET_FILE.md](../../docs/JIRITSU_SET_FILE.md)）
