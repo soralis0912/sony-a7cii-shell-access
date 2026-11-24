@@ -540,3 +540,76 @@ streaming ASCII straight into `cat >` through the telnetd pty — see
     /dev/nflasha30 on /usr/data/lut type vfat (rw,dirsync,noatime,...)
 
 A 970 KB file written there survives as a normal file with normal permissions.
+
+## The USB gadget, and why `usb_otgcore: mode error` is a red herring (2026-11-25)
+
+When the host enumerates nothing, ask the camera rather than the log. The
+device controller's own live state is in sysfs:
+
+    /sys/class/udc/f10c0000.usb/state         not attached
+    /sys/class/udc/f10c0000.usb/current_speed UNKNOWN
+    /sys/class/udc/f10c0000.usb/maximum_speed full-speed
+    /sys/class/udc/f10c0000.usb/is_otg        1
+    /sys/class/udc/f10c0000.usb/uevent        USB_UDC_NAME=dwc3-gadget
+
+`not attached` is the controller saying it sees no host. `maximum_speed` reads
+`full-speed` while idle; the driver rewrites it when a mode is actually chosen
+(dmesg then says `maximum_speed = 5(usb2.0 = 3, usb3.1 = 6)`).
+
+On the macOS side the matching check is the IORegistry, not `system_profiler`
+(which printed nothing at all here):
+
+    ioreg -c IOUSBHostDevice -r -w 0 | grep -E '\+-o '
+
+Zero `IOUSBHostDevice` nodes while `usb-drd0`, `usb-drd1`, `port-usb-c-1` and
+`port-usb-c-2` are all present means the controllers are healthy and nothing is
+plugged in. `ioreg -l` emitted 4.8 MB, so ioreg itself was working.
+
+### `mode error` accompanies role switching; it does not mark a failure
+
+The retained ring buffer holds 14 `usb_otgcore: mode error` lines, and they
+come in pairs about 2.6 s apart - the same cadence as the gadget's own
+start/stop cycle:
+
+    fusb_try_start_gadget gadget started
+    dwc3 f10c0000.usb: gadget.c speed =5(...)
+    dwc3 f10c0000.usb: gadget.c, reset
+    dwc3 f10c0000.usb: gadget.c, connect done
+    ... ~3 s ...
+    ioctl_stop: usb_gcw_unregister_driver() ON_DEMAND
+    fusb_try_stop_gadget gadget stopped
+
+One of those `mode error` lines sits at timestamp 1626 s in a boot whose log is
+full of successful `connect done` cycles at 788-1053 s, so the message occurs
+in a boot where USB demonstrably worked. Treat it as noise from the Type-C
+role switch.
+
+Also seen at boot, and also not fatal:
+
+    usbg_buspower: ioctl_probe(): Failed to usb_gadgetcore_register_driver(). error code is -22
+
+### `dmesg` output here is not in time order
+
+The buffer has wrapped and holds the tail of one boot followed by others, each
+with its clock restarted. In one capture `grep -n` gave timestamp 1626 s at
+line 853, 3.1 s at line 1210 and 79.8 s at line 2023. A low timestamp is
+therefore **not** evidence that something just happened.
+
+To date an event, compare a process start time with the uptime instead.
+Field 22 of `/proc/<pid>/stat` is jiffies since boot, HZ is 100:
+
+    telnetd (pid 2504) field 22 = 439642  ->  4396 s
+    /proc/uptime                          =  5526 s
+
+So that telnetd was started 4396 s into the current boot and the camera has not
+rebooted since. `cut` is not available; parse the line off-camera.
+
+### Sony's own USB proc interfaces
+
+    /proc/usb_otg       mode 0400, four bytes, read `03 02 01 00`
+    /proc/usb_gadget    mode 0666, empty on read
+    /proc/usb_event     counters: count 1, err_count 0, queue, handle list
+    /proc/usbg_storage/storage_access_info   EPERM even as root
+
+`[usbter usbg_ldisc_start]` in the log is a USB **terminal** line discipline
+gadget, worth a look as another console route.
