@@ -20,6 +20,39 @@
 Senser FileControl（`0xff01`）は `error 128` で拒否された。
 どのレベルのテーブルにも無いという静的判定の裏が取れた。
 
+## `shell` は繋がらなかった（2026-11-24）
+
+レベル A なので端末ゲート自体は開いており、PMCA の `shell` は
+`Terminal activated.` まで進む。だが**入力したコマンドは一切届かず**、
+`Ctrl+C` のあと空メッセージの `Error:` が出る。`id` 1文字でも同じ。
+
+原因の第一候補は**エンドポイントの取り違え**。PMCA の
+`SenserPlatformBackend.interactiveShell` は `driver.read/write(..., ep=1)` を
+使うが、`GenericUsbDriver` の `ep` は**エンドポイントアドレスではなく、
+見つけたバルクエンドポイント列の添字**：
+
+```python
+def read(self, length, ep=0, timeout=None):
+  return self.backend.read(self.epIn[ep], length, timeout)
+def write(self, data, ep=0):
+  self.backend.write(self.epOut[ep], data)
+```
+
+A7 IV の公開資料では USB 端末は IN `0x83` / OUT `0x04`。A7C II の
+サービスインタフェースのエンドポイント構成が違えば、添字 1 は別の
+エンドポイントを指すか、そもそも存在しない。`readTerminal` は例外を
+飲んで空を返す実装なので、**失敗しているのは書き込み側**と考えられる。
+
+第二候補は、**端末は存在するが対話シェルが結び付いていない**こと。
+`libosal_ulogio.so` の `.data` には
+`Default interactive subsys is not set and latest switched subsys does not ...`
+という文字列があり、この機体の `/setting/ulogio.bin` は **`ISYS = 0`**
+（下記）。端末に流れるのはログだけで、入力を受ける主体がいない可能性がある。
+
+切り分けは `scripts/terminal_probe.py`：エンドポイントを列挙し、
+端末を有効にしてから (OUT, IN) の全組み合わせに改行1つを送って応答を見る。
+**全組で「write failed」なら前者、全組で「silent」なら後者。**
+
 ## `/etc/ssh/sshd_config` は存在し、**書き込み可能な** nflasha10 にある
 
 3,094 バイト。要点だけ：

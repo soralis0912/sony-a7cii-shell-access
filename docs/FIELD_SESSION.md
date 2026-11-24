@@ -41,7 +41,24 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/survey_readonl
 > 2026-11-24 の実測では **レベル A**（端末ゲート開）。
 > この機体では下の「レベル A だった場合」に進む。
 
-### レベル A だった場合 → そのままシェルを試す（書き込みゼロ）
+### レベル A だった場合 → まず端末のエンドポイントを確かめる
+
+> 2026-11-24：`shell` は `Terminal activated.` までは進むが、
+> **入力が届かない**（空の `Error:`）。先にこれを切り分ける。
+
+```bash
+cd ~/git/a7c2/Sony-PMCA-RE
+sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/terminal_probe.py
+```
+
+- [ ] `bulk IN` / `bulk OUT` のアドレス一覧を貼る
+- [ ] どの (OUT, IN) 組が応答したかを貼る
+- 全組 `write failed` → PMCA の `ep=1` が的外れ。応答した組に合わせて直せばよい
+- 全組 `silent` → 端末はあるがシェルが結び付いていない（ulogio の `ISYS`）
+
+応答する組が分かってから、下の `shell` に進む。
+
+### 参考：`shell` が通る場合（書き込みゼロ）
 
 ```bash
 cd ~/git/a7c2/Sony-PMCA-RE

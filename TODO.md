@@ -36,7 +36,11 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_
 - [x] `service level: A (adjCodeLevel 3)`。端末ゲートは**開いている**
 - [x] `bk r 03000000` は 600 バイト・PEM ヘッダありを確認（内容は非公開）
 - [x] FileControl（`0xff01`）は `error 128` で拒否＝静的判定どおり
-- [ ] **次の一手**：`pmca-console.py serviceshell` → `shell`。
+- [x] `shell` を試した（2026-11-24）：`Terminal activated.` までは進むが
+      **入力が届かない**。空の `Error:`。原因の切り分けは
+      `scripts/terminal_probe.py`（エンドポイント列挙 ＋ 全組に改行1つ）
+- [ ] **次の一手**：`terminal_probe.py` を走らせ、応答する (OUT, IN) 組を特定する。
+      そのうえで `pmca-console.py serviceshell` → `shell`。
       プロンプトが返るか、`grep -E '^(Uid|Gid):' /proc/self/status` が 0 か、
       `ls -l /bin/`（実在するシェル）、`ls -l /etc/shadow`、`cat /proc/osal/ulogio`、
       `ps`（sshd が走っているか）を確認する。書き込みは発生しない
