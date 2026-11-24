@@ -654,3 +654,34 @@ rebooted since. `cut` is not available; parse the line off-camera.
 
 `[usbter usbg_ldisc_start]` in the log is a USB **terminal** line discipline
 gadget, worth a look as another console route.
+
+## The backup store is a file on a writable partition (2026-11-25)
+
+    -rw-r--r--  1 root 0  2390264  /setting/Backup.bin
+    -rwxrwxrwx  1 root 0  2390264  /setting/Backup.bak
+
+`/setting` is `/dev/nflasha2`, vfat, **rw**. The research repository already
+decoded this format - 6450 entries, checksum verified - so the backup
+properties the custom-LUT slots depend on
+(`BKID_APP_IS_EXIST_USER_LUT<n>` and friends) may be reachable from the shell
+without service mode at all. Unverified, and not to be attempted casually: the
+running app almost certainly caches the store and rewrites it, so a naive edit
+could be clobbered or could corrupt the user's settings.
+
+## `/tmp`, `/etc` and `/var` are the same filesystem
+
+    /dev/nflasha10 on /tmp type vfat (rw,...)
+    /dev/nflasha10 on /etc type vfat (rw,...)
+    /dev/nflasha10 on /var type vfat (rw,...)
+
+One `mkdir /tmp/foo` therefore also appears as `/etc/foo`. Worth knowing before
+creating scratch directories.
+
+## There is no boot hook on a writable partition
+
+    /dev/nflasha7 on / type ext2 (ro,sync,noatime,nodiratime,errors=continue)
+
+No `/etc/init.d`, no `/etc/rc*`, no `/etc/inittab`. The root filesystem is
+read-only ext2, so making telnetd survive a power cycle would mean writing to
+the rootfs partition itself, not dropping a script somewhere writable. That is
+a firmware-partition modification, not a configuration change.
