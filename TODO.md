@@ -4,7 +4,24 @@
 C も PC だけで完結する。H・B2・D 以降は実機が必要で、
 着手前に完全なバックアップをリポジトリ外に取る。
 
-## H. サービス権限レベルを測る【実機・読み取りのみ・最優先】
+## H0. Jiritsu で /etc と /setting を読む【実機・読み取りのみ・最優先】
+
+**2026-11-24 に Jiritsu の読み取りが実機で通った**（姉妹リポジトリの
+プローブが `GET_FILE2` で status 0 と 517 バイト）。Jiritsu は
+`0x40` AdjustControl 経由なので権限レベルに依らない。
+`scripts/survey_readonly.py` がこの経路で下記を読むようになっている。
+
+- [ ] `/usr/share/pmbp/DeviceInfo.xml`（既知ファイル＝対照）が一致するか
+- [ ] `/etc/ssh/sshd_config` の有無と中身
+- [ ] `/etc/nsswitch.conf` の `passwd:` 行
+- [ ] `/etc/passwd`（**hash 欄は貼らない**）
+- [ ] `/setting/ulogio.bin` の現物（telnet フラグの現状。上書き前に必須）
+
+ここが読めれば、**root SSH にファームウェア改変が要るかどうかが決まる**。
+nflasha10 / nflasha2 はアップデートパッケージに入っていないので、
+静的解析では絶対に埋まらない穴。
+
+## H. サービス権限レベルを測る【実機・読み取りのみ】
 
 [docs/ON_MEMORY.md](docs/ON_MEMORY.md) のとおり、**不揮発に何も書かずに
 端末が取れるかはレベル A かどうかだけで決まる**。これを最初に測る。
@@ -20,7 +37,7 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_
 - [ ] **A だったら**、続けて `pmca-console.py serviceshell` の `shell` を試し、
       プロンプトが返るか、`grep -E '^(Uid|Gid):' /proc/self/status` が 0 かを確認する
       （書き込みは発生しない。抜けると端末は自動で無効化される）
-- [ ] **B / C だったら**、オンメモリ経路は無いので A〜C の静的解析に戻る。
+- [ ] **B / C だったら**、USB 端末は使えないが Jiritsu は使える（H0）。
       あわせて `push` / `pull` / `bootrom` が実際に拒否されるかも記録する
       （`0xff01` / `0xff03` はどのレベルのテーブルにも無い、という静的判定の裏取り）
 
@@ -73,11 +90,11 @@ Jiritsu の読み取り（レベル A が前提）か、シェルが取れた後
 - [ ] **実機で観測するほうが安い。** Wi-Fi 接続時の機器記述（SCPD）を取得して
       `X_SSH_Support` の値を見る、またはメニューに親子接続の項目があるかを見る
 
-## D. Jiritsu の読み取りプローブを実機で通す【実機・読み取りのみ】
+## D. Jiritsu の読み取りプローブ【完了・2026-11-24】
 
-姉妹リポジトリの残タスク B と同じ。これが通らないと経路2は始まらない。
-**前提**：Jiritsu は `0xff00` TestMode 経由で、そのテーブルはレベル A にしか無い。
-H でレベル A が出ていなければ、ここは通らない見込み。
+姉妹リポジトリの残タスク B。`GET_FILE2` が status 0 と 517 バイトを返し、
+ハッシュも展開済み 2.01 の同一ファイルと一致した。
+読み取り範囲を広げる作業は H0 に移した。
 
 - [ ] `a7cii_jiritsu_readonly_probe.py` を実行し、
       `/usr/share/pmbp/DeviceInfo.xml` が 517 バイト・既知のハッシュで返るか確認する

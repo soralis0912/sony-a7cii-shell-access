@@ -29,7 +29,8 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 | Telnet はどうか | A7 IV 6.02 より条件が良い。`libosal_ulogio.so` に telnetd の実装（`ulogio_telnetd_init` / `_mainloop` / `ulogio_filter_set_telnet`）が**残っている**ので、旧版からの移植が不要。有効化フラグの在処も確定：`/setting/ulogio.bin` の `TELN` レコード1件（12バイト）で足り、`bk w` では上げられない |
 | ホスト鍵と sshd の設定はどこか | **確定。** ホスト秘密鍵はバックアッププロパティ `0x03000000`（600バイト、サブシステム `0x0300`）。sshd は引数なしで起動されるので設定は `/etc/ssh/sshd_config`、つまり**書き込み可能な** nflasha10 側にある |
 | では実機でシェルが取れるのか | **まだ取れない。** ただし恒久的な書き込みを伴わない経路が1つ見つかった（下記） |
-| 書き込みゼロで端末が取れるか | **サービス権限レベル A（`adjCodeLevel == 3`）なら取れる見込み。** 端末ゲートはレベル A のときだけ開き、カメラのコンソールには初めから `ash --login` が走っている。レベル B/C だと TestMode も使えず行き止まり。判定は `scripts/probe_service_level.py`（読み取りのみ）。詳細は [docs/ON_MEMORY.md](docs/ON_MEMORY.md) |
+| 書き込みゼロで端末が取れるか | **サービス権限レベル A（`adjCodeLevel == 3`）なら取れる見込み。** 端末ゲートはレベル A のときだけ開き、カメラのコンソールには初めから `ash --login` が走っている。判定は `scripts/survey_readonly.py`（読み取りのみ） |
+| レベルが A でなかったら終わりか | **いいえ（2026-11-24 訂正）。** Jiritsu は `0x40` AdjustControl 経由で、全レベルのテーブルにある。実機でファイル読み取りが通っており、同じカテゴリに `SET_FILE` も定義されている。端末を経由せず `/setting/ulogio.bin`（telnet）や `/etc/ssh/sshd_config`（SSH）に届く可能性がある |
 
 つまり「できるか」に対しては **部品は全部ある・パッチの設計も流用できる、
 残るのは書き込み経路の1点** というのが現在の判定です。そしてその1点は、
