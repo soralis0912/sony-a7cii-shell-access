@@ -3,26 +3,17 @@
 
 Reads only. Nothing is written to the backup and no file is sent.
 
-This camera has **16** user-LUT slots, each described by five backup
-properties. The families are 16 wide and tile without gaps, which is how the
-layout was pinned down on hardware:
+There are 50 slots, each described by five backup properties. Their ids are
+**not** consecutive: only slots 0..15 of each family sit in one run, and the
+rest are scattered over further blocks. The address table below is generated
+from the feature-research repository's BKID inventory for firmware 2.01, where
+every id is read out of the firmware's own name records rather than guessed.
 
-    0x02cf104c .. 0x02cf105b   ATTR_AE_LEVEL_OFFSET 0..15   default 0x00
-    0x02cf105c .. 0x02cf106b   IS_EXIST_USER_LUT    0..15   default 0x00
-    0x02cf106c .. 0x02cf107b   USER_LUT_FILE_ID     0..15   default 64 zeros
-    0x02cf107c .. 0x02cf108b   ATTR_INPUT_GAMUT     0..15   default 0x01
-    0x02cf1450 .. 0x02cf145f   ATTR_OUTPUT_PROCAM   0..15   default 0x00
-
-The BKID inventory names slots up to 49 and, read naively as base + n, those
-names run straight into the next family: IS_EXIST16 would be 0x02cf106c, which
-is really FILE_ID0. An earlier version of this script did exactly that and
-reported slots 16..49 as all "changed" - it was reading real properties under
-the wrong labels. Asking for more than 16 slots is refused for that reason.
-
-Point of the exercise: import a LUT through the camera's own menu, from
-PRIVATE/SONY/PRO/LUT on the card, then run this. Whatever differs from the
-defaults is the registration the import performed - which is what a slot would
-have to be given to make a LUT dropped straight into /usr/data/lut appear.
+Taking the ids as base + n, which an earlier version of this script did, reads
+the wrong property past slot 15 - IS_EXIST_USER_LUT16 is 0x02cf141e, not
+0x02cf106c, and 0x02cf106c is USER_LUT_FILE_ID0. That is what produced a bogus
+report of slots 16..49 all differing from their defaults: real properties, read
+under the wrong names.
 
 Run it from inside a Sony-PMCA-RE checkout:
 
@@ -40,13 +31,46 @@ from survey_readonly import PMCA_ROOT  # noqa: E402  (runs the pmca bootstrap)
 import argparse  # noqa: E402
 
 FAMILIES = [
-    ("IS_EXIST",          0x02CF105C, "00"),
-    ("FILE_ID",           0x02CF106C, "00" * 64),
-    ("ATTR_INPUT_GAMUT",  0x02CF107C, "01"),
-    ("ATTR_OUTPUT_PROCAM", 0x02CF1450, "00"),
-    ("ATTR_AE_LEVEL_OFF", 0x02CF104C, "00"),
+    ("IS_EXIST",           "00", [
+        ( 0, 15, 0x02CF105C),
+        (16, 49, 0x02CF141E),
+    ]),
+    ("FILE_ID",            "00" * 64, [
+        ( 0, 15, 0x02CF106C),
+        (16, 31, 0x02CF1440),
+        (32, 43, 0x02CF1461),
+        (44, 44, 0x02CF1668),
+        (45, 45, 0x02CF166C),
+        (46, 46, 0x02CF16AB),
+        (47, 47, 0x02CF16B4),
+        (48, 49, 0x02CF16D6),
+    ]),
+    ("ATTR_INPUT_GAMUT",   "01", [
+        ( 0, 15, 0x02CF107C),
+        (16, 49, 0x02CF16D8),
+    ]),
+    ("ATTR_OUTPUT_PROCAM", "00", [
+        ( 0, 15, 0x02CF1450),
+        (16, 49, 0x02CF176A),
+    ]),
+    ("ATTR_AE_LEVEL_OFF",  "00", [
+        ( 0, 15, 0x02CF104C),
+        (16, 17, 0x02CF13A8),
+        (18, 18, 0x02CF13AE),
+        (19, 21, 0x02CF13B4),
+        (22, 35, 0x02CF13C6),
+        (36, 49, 0x02CF1410),
+    ]),
 ]
-SLOTS = 16
+SLOTS = 50
+
+
+def address(runs, slot: int) -> int:
+    """The property id for this slot, from the generated run table."""
+    for lo, hi, base in runs:
+        if lo <= slot <= hi:
+            return base + (slot - lo)
+    raise KeyError("slot %d is not in the table" % slot)
 
 
 def absent(data) -> bool:
@@ -83,10 +107,10 @@ def read_slots(camera, slots: int, show_all: bool) -> None:
     interesting = []
     missing = []
     values = {}
-    for name, base, default in FAMILIES:
+    for name, default, runs in FAMILIES:
         for n in range(slots):
             try:
-                raw = camera.readBackup(base + n)
+                raw = camera.readBackup(address(runs, n))
             except Exception as exc:                      # noqa: BLE001
                 raw = None
                 err = str(exc)
@@ -111,20 +135,20 @@ def read_slots(camera, slots: int, show_all: bool) -> None:
     to_show = sorted(set(interesting) | ({0, 1, 2, 3} if not show_all else set(range(slots))))
     for n in to_show:
         print("\nslot %d" % n)
-        for name, base, default in FAMILIES:
+        for name, default, runs in FAMILIES:
+            pid = address(runs, n)
             raw, err = values[(name, n)]
             if err is not None:
-                print("  %-19s 0x%08x  read failed: %s" % (name, base + n, err))
+                print("  %-19s 0x%08x  read failed: %s" % (name, pid, err))
                 continue
             if absent(raw):
-                print("  %-19s 0x%08x  (no value - not provisioned)"
-                      % (name, base + n))
+                print("  %-19s 0x%08x  (no value)" % (name, pid))
                 continue
             h = hexs(raw)
             mark = "" if h == default else "   <-- changed"
             shown = h if len(h) <= 72 else h[:72] + "..."
             print("  %-19s 0x%08x  %s%s%s"
-                  % (name, base + n, shown, printable(raw), mark))
+                  % (name, pid, shown, printable(raw), mark))
 
 
 def main() -> int:
@@ -135,8 +159,7 @@ def main() -> int:
                     help="print every slot, not just the changed ones")
     args = ap.parse_args()
     if not 1 <= args.slots <= SLOTS:
-        print("this camera has %d slots; reading past that reads the next "
-              "property family under the wrong name" % SLOTS, file=sys.stderr)
+        print("there are %d slots" % SLOTS, file=sys.stderr)
         return 2
 
     from pmca.commands.usb import senserShellCommand
