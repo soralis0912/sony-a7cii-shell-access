@@ -187,17 +187,22 @@ def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("library", type=pathlib.Path, help="the built libJit.so")
+    ap.add_argument("library", type=pathlib.Path, nargs="?",
+                    help="the built libJit.so (not needed with --list-only)")
     ap.add_argument("--dir", type=pathlib.Path, default=pathlib.Path("."))
     ap.add_argument("--yes", action="store_true", help="skip the confirmation")
     ap.add_argument("--list-only", action="store_true",
                     help="only list what is under /tmp/jiritsu and exit; writes nothing")
     args = ap.parse_args()
 
-    if not args.library.is_file():
-        print("no such file: %s" % args.library, file=sys.stderr)
-        return 2
-    blob = vet(args.library)
+    blob = b""
+    if not args.list_only:
+        if args.library is None:
+            ap.error("give the library to send, or use --list-only")
+        if not args.library.is_file():
+            print("no such file: %s" % args.library, file=sys.stderr)
+            return 2
+        blob = vet(args.library)
     args.dir.mkdir(parents=True, exist_ok=True)
 
     from pmca.commands.usb import senserShellCommand
