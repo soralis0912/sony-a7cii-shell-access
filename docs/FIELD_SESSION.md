@@ -54,7 +54,20 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/terminal_probe
 **このスクリプトはディスクリプタを読むだけで、どのエンドポイントにも
 何も送らない。**
 
-- [ ] エンドポイント一覧と、PMCA の添字1が何に解決されるかを貼る
+- [x] 2026-11-24：`0x81`/`0x02`/`0x83`/`0x04`。添字1は **IN `0x83` / OUT `0x04`**
+      ＝ A7 IV の公開値と一致。**エンドポイントは正しい**
+
+次は、`shell` が捨てている本当の USB エラーを拾う（同じエンドポイントに
+改行1つだけ。`shell` がやることと同じ範囲）：
+
+```bash
+cd ~/git/a7c2/Sony-PMCA-RE
+sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/terminal_write_error.py
+```
+
+- [ ] `the write raised` なら `errno` / `strerror` を貼る（stall か host 側か）
+- [ ] `the write went through` かつ `silent` なら、端末に対話サブシステムが
+      結び付いていない側の問題（ulogio の `ISYS`）
 
 > **やってはいけないこと（2026-11-24 の失敗）**：
 > 「どの組が応答するか」を調べるために (OUT, IN) の全組へ順番に書き込む、

@@ -26,7 +26,38 @@ Senser FileControl（`0xff01`）は `error 128` で拒否された。
 `Terminal activated.` まで進む。だが**入力したコマンドは一切届かず**、
 `Ctrl+C` のあと空メッセージの `Error:` が出る。`id` 1文字でも同じ。
 
-原因の第一候補は**エンドポイントの取り違え**。PMCA の
+### エンドポイントは正しかった（2026-11-24、実機で確認）
+
+```text
+0x81 bulk IN / 0x02 bulk OUT / 0x83 bulk IN / 0x04 bulk OUT（各 512 バイト）
+bulk IN  [0]=0x81, [1]=0x83      bulk OUT [0]=0x02, [1]=0x04
+```
+
+PMCA の添字1は **IN `0x83` / OUT `0x04`** に解決され、これは A7 IV の
+公開値と**完全に一致**する。つまり第一候補（エンドポイントの取り違え）は**消えた**。
+
+### 空の `Error:` の正体
+
+PMCA の libusb バックエンドは、あらゆる `usb.core.USBError` を
+**引数なしの** `GenericUsbException()` に置き換える：
+
+```python
+def write(self, ep, data):
+  try: self.dev.write(ep, data)
+  except usb.core.USBError: raise GenericUsbException()
+```
+
+`print('Error: %s' % e)` が空になるのはこのため。
+`readTerminal` はこの例外を飲んで `b""` を返すが、`writeTerminal` は飲まない。
+**つまりセッションを終わらせているのは OUT `0x04` への書き込み**で、
+本当のエラー（stall なのかホスト側の拒否なのか）は捨てられている。
+
+それを拾うのが `scripts/terminal_write_error.py`。`shell` と同じことを
+同じエンドポイントで1回だけやって、`errno` / `strerror` まで出す。
+
+### 原因の第一候補だったもの（記録として残す）
+
+**エンドポイントの取り違え**。PMCA の
 `SenserPlatformBackend.interactiveShell` は `driver.read/write(..., ep=1)` を
 使うが、`GenericUsbDriver` の `ep` は**エンドポイントアドレスではなく、
 見つけたバルクエンドポイント列の添字**：

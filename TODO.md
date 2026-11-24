@@ -39,8 +39,12 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_
 - [x] `shell` を試した（2026-11-24）：`Terminal activated.` までは進むが
       **入力が届かない**。空の `Error:`。原因の切り分けは
       `scripts/terminal_probe.py`（エンドポイント列挙 ＋ 全組に改行1つ）
-- [ ] **次の一手**：`terminal_probe.py` を走らせ、応答する (OUT, IN) 組を特定する。
-      そのうえで `pmca-console.py serviceshell` → `shell`。
+- [x] `terminal_probe.py`：エンドポイントは **IN `0x83` / OUT `0x04`** で
+      A7 IV と一致。PMCA の添字1も同じ。**取り違えではない**
+- [x] 空の `Error:` の正体は PMCA の `GenericUsbException()`（引数なし）。
+      落ちているのは OUT `0x04` への**書き込み**で、本当の USB エラーは捨てられている
+- [ ] **次の一手**：`scripts/terminal_write_error.py` で本当のエラーを拾う。
+      stall なら端末が入力を受けていない、host 側エラーなら Mac の問題
       プロンプトが返るか、`grep -E '^(Uid|Gid):' /proc/self/status` が 0 か、
       `ls -l /bin/`（実在するシェル）、`ls -l /etc/shadow`、`cat /proc/osal/ulogio`、
       `ps`（sshd が走っているか）を確認する。書き込みは発生しない
