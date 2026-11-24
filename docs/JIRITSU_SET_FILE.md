@@ -28,6 +28,38 @@ if ( strcmp(v8, "/tmp/jiritsu/libJit.so") == 0 ) {
 実行される**。A7 IV の研究が「一時 `libJit.so` をサービスプロセスに
 読み込ませる」と書いているのは、この同じ仕組みのこと。
 
+## 書き込み先の確定（独立検証、2026-11-24）
+
+`get_jiritsu_area_filename`（`0x8f1c`）を IDA でデコンパイルして、
+索引→パスの対応を**コードから直接**確認した：
+
+```c
+switch (a1) {
+  case 0: return "/tmp/jiritsu/tmmc.jit";
+  case 1: return "/tmp/jiritsu/DIAC.csv";
+  case 2: return "/tmp/jiritsu/libJit.so";     // ← 送るのはこれ
+  case 3: return "/tmp/jiritsu/jit.log";       // ハンドラ側で拒否
+  case 4: return "/tmp/jiritsu/history.txt";   // ハンドラ側で拒否
+  default:
+    for (i = 0; i != 34; ++i)                  // 34件の表（unk_47AD8、16バイト/件）
+      if (*((u8 *)&unk_47AD8 + 16*i) == a1) return *((char **)&unk_47AD8 + 2*i + 1);
+    return "";                                  // 空文字列 → 書き込まない
+}
+```
+
+`adj_cmd_set_file`（`0x9038`）はこの戻り値に対して
+
+1. 空文字列なら何もしない
+2. `jit.log` と `history.txt` は `strcmp` で弾く
+3. `libJit.so` のときだけ `/tmp/jbusy` の不在を要求（あればエラー 17）
+4. `/tmp/jiritsu/*` の合計サイズを `glob` で数えて 25 MiB 制限を確認
+5. 書き込み後、パスが `libJit.so` なら**その場で `dlopen`**（`0x9260`）
+
+**つまり書き込み先は索引で一意に決まり、`/tmp/jiritsu/` の外には出ない。**
+索引を間違えても、当たるのは上記5件か34件の表（いずれも `/tmp/jiritsu/` 配下、
+中身は `Cam_AdjustGuide_Files/` の調整用 REQ/RES ファイル）のどれかで、
+`/etc` や `/setting` やバックアップには届かない。
+
 ## 書き込み先はパスではなく「番号で選ぶ固定表」
 
 `adj_cmd_set_file` は**リクエストのパスを使わない**。

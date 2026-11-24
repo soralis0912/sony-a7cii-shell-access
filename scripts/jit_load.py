@@ -66,6 +66,7 @@ CATEGORY = 0x1001
 SET_FILE = 0x4007          # the only write command this script will send
 SET_FILE_PATH = 0x400F
 GET_FILE2 = 0x4011
+GET_FILELIST = 0x400A      # read-only: what is already on the partition
 
 FILE_LIBJIT = 2            # /tmp/jiritsu/libJit.so
 MODE_RAW = 0               # write the bytes as given
@@ -115,10 +116,33 @@ def jiritsu_read(camera, path: str):
     return response[4:], None
 
 
+def list_area(camera):
+    """Read-only: ask what is already under /tmp/jiritsu before writing there."""
+    for payload in (b"\x00", b"\x00\xff\x00", b""):
+        try:
+            response = camera._sendAdjustControlPacket(CATEGORY, GET_FILELIST, payload)
+        except Exception as exc:
+            print("   GET_FILELIST(%s) refused: %s" % (payload.hex() or "empty", exc))
+            continue
+        print("   GET_FILELIST(%s) returned %d byte(s)"
+              % (payload.hex() or "empty", len(response)))
+        if response:
+            text = "".join(chr(c) if 32 <= c < 127 else "." for c in response[:800])
+            print("   | %s" % text)
+        return response
+    return None
+
+
 def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool) -> None:
     camera.readHasp()
+    print("what is on the partition now (read-only):")
+    list_area(camera)
+    print()
     print("about to write %d bytes to /tmp/jiritsu/libJit.so (file number %d)"
           % (len(blob), FILE_LIBJIT))
+    print("that path is what get_jiritsu_area_filename(2) returns; the switch in")
+    print("libJiritsu.so 2.01 maps 0..4 to tmmc.jit, DIAC.csv, libJit.so, jit.log")
+    print("and history.txt, and the handler refuses jit.log and history.txt.")
     print("sha256 %s" % hashlib.sha256(blob).hexdigest())
     print("the service will then dlopen a ramdisk copy and run its constructor.")
     if not assume_yes:
@@ -166,6 +190,8 @@ def main() -> int:
     ap.add_argument("library", type=pathlib.Path, help="the built libJit.so")
     ap.add_argument("--dir", type=pathlib.Path, default=pathlib.Path("."))
     ap.add_argument("--yes", action="store_true", help="skip the confirmation")
+    ap.add_argument("--list-only", action="store_true",
+                    help="only list what is under /tmp/jiritsu and exit; writes nothing")
     args = ap.parse_args()
 
     if not args.library.is_file():
@@ -181,7 +207,12 @@ def main() -> int:
 
     def collect(camera):
         nonlocal done
-        run(camera, blob, args.dir, args.yes)
+        if args.list_only:
+            camera.readHasp()
+            print("read-only listing of /tmp/jiritsu (nothing is written):")
+            list_area(camera)
+        else:
+            run(camera, blob, args.dir, args.yes)
         done = True
 
     senserShellCommand(complete=collect)
