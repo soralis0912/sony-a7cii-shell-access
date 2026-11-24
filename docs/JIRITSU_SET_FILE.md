@@ -3,6 +3,60 @@
 > **実機で成立（2026-11-24）。** 普通の USB ケーブル経由で、サービスプロセス内で
 > **uid 0 / euid 0** として任意のネイティブコードが実行された。
 
+## root でのコマンド実行が成立（2026-11-24）
+
+`jit_sh.c` と `jit_load.py --run` で、**カメラ上で任意のシェルコマンドを
+root 実行し、出力を読み戻せた。** USB 端末は不要だった。
+
+```text
+writing the command to /tmp/jiritsu/DIAC.csv (index 1):
+   index 1: 33 bytes written
+writing the library to /tmp/jiritsu/libJit.so (index 2):
+   index 2: 4488 bytes written
+
+--- command
+id; uname -a; ls -l /etc/ssh; ps
+--- output
+/bin/sh: id: not found
+Linux (none) 4.9.337-scel+ #1 SMP PREEMPT Sat Oct 11 04:09:59 JST 2025 aarch64 GNU/Linux
+-rw-r--r--    1 root     0             3094 Jan  1  2020 sshd_config
+  PID TTY          TIME CMD
+    ...
+ 1962 ?        00:00:00 sh
+ 1965 ?        00:00:00 ps
+--- exit status 0 (raw 0)
+```
+
+- **`clone` + `execve` が 215 スレッドのプロセス内で通った。**
+  `ps` の末尾に出ている `1962 sh` と `1965 ps` が、我々が起動した子プロセス。
+- 終了ステータスも取れる（`exit status 0`）。
+- `/bin/sh` は busybox で、**`id` アプレットは入っていない**
+  （uid は別経路で確認済み：`/proc/self/status` が `Uid: 0 0 0 0`）。
+  何が使えるかは `busybox --list` で分かる。
+- ホスト名は `(none)`。
+- `ps` の完全な出力が取れた。`jit_probe` が5件しか見なかったのは
+  カーネルスレッドの `cmdline` が空だったため。
+  なお `jit_probe` が見た pid 528 の `/bin/ash --` は、この `ps` には
+  居ない（その後終了したと見られる）。
+
+### 使い方
+
+```bash
+cd ~/git/a7c2/Sony-PMCA-RE
+sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/jit_load.py \
+  ~/git/a7c2/sony-a7cii-shell-access/native/jit/libJit_sh.so \
+  --run 'cat /etc/passwd; busybox --list | head -40'
+```
+
+1バッチあたり **SET_FILE 2回（コマンド＋ライブラリ）と読み戻し1回**。
+
+### 代償
+
+ライブラリ（4,488 バイト）を**毎回 nflasha6 に書き直す**ので、
+コマンドを繰り返すほど vfat への書き込みが積み上がる。
+常駐させて待ち受ける形にすれば減らせるが、
+カメラ本体アプリ内で待ち合わせることになるので、今はしていない。
+
 ## 実機での結果（2026-11-24）
 
 `scripts/jit_load.py` で、自前ビルドの `libJit.so`（3,328 バイト、libc 非依存、

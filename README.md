@@ -23,11 +23,16 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 
 ## 到達点（2026-11-24）
 
-**普通の USB ケーブル経由で、カメラ内のサービスプロセスに自前の共有ライブラリを
-読み込ませ、uid 0 / euid 0 でコードを実行できた。** 経路は Jiritsu の
-`SET_FILE`（カテゴリ `0x1001` / コマンド `0x4007`、番号2）で、
-書き込み直後に `adj_cmd_set_file` が `dlopen` する。
+**普通の USB ケーブル経由で、カメラ上で任意のシェルコマンドを root 実行し、
+出力を読み戻せる。** 経路は Jiritsu の `SET_FILE`（カテゴリ `0x1001` /
+コマンド `0x4007`）で、索引1にコマンド文、索引2に自前の共有ライブラリを書くと
+`adj_cmd_set_file` がそれを `dlopen` し、コンストラクタが
+`/bin/sh -c` でコマンドを実行して出力をファイルに落とす。
 証拠と手順： [docs/JIRITSU_SET_FILE.md](docs/JIRITSU_SET_FILE.md)。
+
+```bash
+sudo ./venv/bin/python .../jit_load.py .../libJit_sh.so --run 'uname -a; ps'
+```
 
 ファームウェアの書き換えも署名回避も端末ゲートの解除も**不要だった**。
 USB 端末（`shell`）は結局使っていない。
@@ -41,7 +46,7 @@ USB 端末（`shell`）は結局使っていない。
 | A7 IV の SSH 手法はそのまま効くか | **要の1ファイルは完全に同一。** `lib/libnss_ssh.so.2`（10,192 バイト）は A7 IV 6.02 と SHA-256 が一致するので、公開されている8箇所のワードパッチと3つの文字列スロットがバイト単位でそのまま当たる |
 | Telnet はどうか | A7 IV 6.02 より条件が良い。`libosal_ulogio.so` に telnetd の実装（`ulogio_telnetd_init` / `_mainloop` / `ulogio_filter_set_telnet`）が**残っている**ので、旧版からの移植が不要。有効化フラグの在処も確定：`/setting/ulogio.bin` の `TELN` レコード1件（12バイト）で足り、`bk w` では上げられない |
 | ホスト鍵と sshd の設定はどこか | **確定・実機で取得済み。** ホスト秘密鍵はバックアッププロパティ `0x03000000`（600バイト、実機で 600 バイト・PEM を確認）。`sshd_config` は nflasha10 の `/etc/ssh/sshd_config` に実在し（3,094バイト）、`PermitRootLogin no` / `PubkeyAuthentication no` / `MaxSessions 0` / SFTP 無効。`nsswitch.conf` が `passwd: files ssh` なので **NSS のバイトパッチは不要**、`/etc/passwd` を直せばよい |
-| では実機でシェルが取れるのか | **シェルより上の権限が取れた。** root でのネイティブコード実行が実機で成立（上記）。対話シェルは未取得だが、root でコードが走る以上、必要なことはライブラリの中からできる |
+| では実機でシェルが取れるのか | **実質取れた。** root でのコマンド実行が成立（`clone`+`execve` が通り、終了ステータスまで取れる）。対話端末ではなく1バッチ1往復の形 |
 | 書き込みゼロで端末が取れるか | **取れない（2026-11-24 確定）。** 権限レベルは A でゲートも開いているが、端末有効化コマンド `0x00F1` のハンドラ（`libpro00.so` の `command00F1`）が **`mov w0,#1; ret` の8バイトスタブ**で、成功を返すだけで端末を作らない。A7 IV で ULOGIO の復元が必要だったのと同じ構図。[docs/CAMERA_FACTS.md](docs/CAMERA_FACTS.md) |
 | では何が残っているか | **Jiritsu の `SET_FILE` が本線（2026-11-24 に経路を特定）。** 書き込んだファイルが `/tmp/jiritsu/libJit.so` だと、サービスが自分で `dlopen` する。つまり**サービスプロセス内でネイティブコードが走る**。輸送路（カテゴリ `0x1001`）は実機で読み取り成功済み。[docs/JIRITSU_SET_FILE.md](docs/JIRITSU_SET_FILE.md) |
 | 任意のファイルを書けるのか | **書けない。** `SET_FILE` の書き込み先は番号で選ぶ固定表（`libJit.so` を含む5+34件）で、任意パスは読み取り側だけ。`/etc` を直接書くのではなく、`libJit.so` のコードから書くことになる |
