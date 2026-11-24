@@ -180,6 +180,10 @@ def survey(camera, say, out_dir: pathlib.Path) -> None:
         from pmca.platform.properties import PropertyInterface
         backend = SenserPlatformBackend(camera)
         for pid, desc, value in PropertyInterface(backend).getProps():
+            # the serial number identifies this specific camera and has no
+            # bearing on any of this, so it never reaches the report
+            if "serial" in desc.lower():
+                value = "(not recorded)"
             say("  %-22s %s" % (desc + ":", value))
     except Exception as exc:
         say("  could not read properties: %s" % exc)

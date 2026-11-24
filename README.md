@@ -9,6 +9,7 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 リポジトリです。**ここにあるのは静的解析による可否判定と検証計画で、実機での
 シェル取得は未達成**です。
 
+- **実機から取れた事実（2026-11-24）**： [docs/CAMERA_FACTS.md](docs/CAMERA_FACTS.md)
 - **実機を触るときの手順書**： [docs/FIELD_SESSION.md](docs/FIELD_SESSION.md)
 - 判定の要約： [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
 - **オンメモリ（不揮発に書かずに）取れるか**： [docs/ON_MEMORY.md](docs/ON_MEMORY.md)
@@ -27,9 +28,9 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 | それは何のための sshd か | 公式機能「親子（マルチカメラ）接続」のサーバ側。機器記述に `X_SSH_Support` / `X_SSH_QRSetupSupport`、バックアップに子機19スロット分の `BKID_APP_PARENT_CHILD_SERVER_CAMERA_SSH_*` がある |
 | A7 IV の SSH 手法はそのまま効くか | **要の1ファイルは完全に同一。** `lib/libnss_ssh.so.2`（10,192 バイト）は A7 IV 6.02 と SHA-256 が一致するので、公開されている8箇所のワードパッチと3つの文字列スロットがバイト単位でそのまま当たる |
 | Telnet はどうか | A7 IV 6.02 より条件が良い。`libosal_ulogio.so` に telnetd の実装（`ulogio_telnetd_init` / `_mainloop` / `ulogio_filter_set_telnet`）が**残っている**ので、旧版からの移植が不要。有効化フラグの在処も確定：`/setting/ulogio.bin` の `TELN` レコード1件（12バイト）で足り、`bk w` では上げられない |
-| ホスト鍵と sshd の設定はどこか | **確定。** ホスト秘密鍵はバックアッププロパティ `0x03000000`（600バイト、サブシステム `0x0300`）。sshd は引数なしで起動されるので設定は `/etc/ssh/sshd_config`、つまり**書き込み可能な** nflasha10 側にある |
+| ホスト鍵と sshd の設定はどこか | **確定・実機で取得済み。** ホスト秘密鍵はバックアッププロパティ `0x03000000`（600バイト、実機で 600 バイト・PEM を確認）。`sshd_config` は nflasha10 の `/etc/ssh/sshd_config` に実在し（3,094バイト）、`PermitRootLogin no` / `PubkeyAuthentication no` / `MaxSessions 0` / SFTP 無効。`nsswitch.conf` が `passwd: files ssh` なので **NSS のバイトパッチは不要**、`/etc/passwd` を直せばよい |
 | では実機でシェルが取れるのか | **まだ取れない。** ただし恒久的な書き込みを伴わない経路が1つ見つかった（下記） |
-| 書き込みゼロで端末が取れるか | **サービス権限レベル A（`adjCodeLevel == 3`）なら取れる見込み。** 端末ゲートはレベル A のときだけ開き、カメラのコンソールには初めから `ash --login` が走っている。判定は `scripts/survey_readonly.py`（読み取りのみ） |
+| 書き込みゼロで端末が取れるか | **この機体はレベル A で、端末ゲートが開いていることを実機で確認（2026-11-24）。** カメラのコンソールには初めから `ash --login` が走っているので、`serviceshell` の `shell` が次の一手。[docs/CAMERA_FACTS.md](docs/CAMERA_FACTS.md) |
 | レベルが A でなかったら終わりか | **いいえ（2026-11-24 訂正）。** Jiritsu は `0x40` AdjustControl 経由で、全レベルのテーブルにある。実機でファイル読み取りが通っており、同じカテゴリに `SET_FILE` も定義されている。端末を経由せず `/setting/ulogio.bin`（telnet）や `/etc/ssh/sshd_config`（SSH）に届く可能性がある |
 
 つまり「できるか」に対しては **部品は全部ある・パッチの設計も流用できる、

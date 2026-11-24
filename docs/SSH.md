@@ -192,17 +192,34 @@ p3 initrd の `sbin/initrc/fstab.ext` は
 （その機体のホスト鍵そのもの）。逆に `bk w` で自分の鍵を入れることもできる
 はずで、これはファームウェアを触らずにホスト鍵を差し替えられるという意味になる。
 
+## 5c. 実機で確認した結果（2026-11-24）
+
+`/etc/ssh/sshd_config` と `/etc/nsswitch.conf` と `/etc/passwd` を
+Jiritsu 経由で読み出した。内容と含意は [CAMERA_FACTS.md](CAMERA_FACTS.md)。
+要点：
+
+- `sshd_config` は**実在する**（3,094 バイト、nflasha10 側）。
+  `PermitRootLogin no`、`PubkeyAuthentication no`、`MaxSessions 0`、
+  `Subsystem sftp` はコメントアウト。公式用途は PTP/IP への**トンネル**。
+- `nsswitch.conf` は `passwd: files ssh`。**`files` が先**なので、
+  3章の `libnss_ssh.so.2` バイトパッチは**不要**。`/etc/passwd` を直せばよい。
+- `/etc/passwd` の root は uid 0 だがシェルが `/bin/false`、パスワード欄は `*`。
+
+つまり3章・4章の p15 改変（NSS パッチと `bootin.elf` フック）は、
+**root SSH のためには要らない**見込み。p15 は読み取り専用マウントで
+実行中には当たらないので、これは都合がよい。
+
 ## 6. まだ分かっていないこと
 
 
-1. `/etc/ssh/sshd_config` が実機に存在するか、存在するなら中身は何か。
-   `PermitRootLogin` と `Subsystem sftp` の有無で、必要な改変量が変わる。
-2. `/etc/nsswitch.conf` の `passwd:` 行に `ssh` が入っているか。
-   `files` も効くなら、`/etc/passwd` にアカウントを足すだけで済む可能性がある。
-3. 親子接続が ILCE-7CM2（`PRODUCT_MODEL_PP`）で有効か。feature manager 側に
+1. **どのシェルが実在するか。** `/etc/passwd` は全員 `/bin/false`。
+   `/bin/busybox` は p7 側にあるが `/bin/sh` は未確認。レベル A の
+   `shell` で `ls -l /bin/` を見れば済む。
+2. `/etc/shadow` の中身（`shadow: files` なので、ここにハッシュがある）。
+3. sshd が常時走っているのか、親子接続を設定したときだけ起きるのか。
+4. 親子接続が ILCE-7CM2（`PRODUCT_MODEL_PP`）で有効か。feature manager 側に
    SSH / 親子接続の可否フラグは見つかっていない。
-4. `BKID_APP_PARENT_CHILD_SERVER_CAMERA_SSH_*` を `bk w` で立てたときに、
+5. `BKID_APP_PARENT_CHILD_SERVER_CAMERA_SSH_*` を `bk w` で立てたときに、
    メニューに出ないまま sshd が起きるのか、メニュー側の判定が先に効くのか。
 
-1 と 2 は実機の**読み取り**で埋まる（nflasha10 はパッケージに入っていない）。
-3 と 4 は実機のプロパティ実験（1件ずつ、復旧確認付き）。
+1〜3 はレベル A の `shell` で埋まる。4 と 5 はプロパティ実験。

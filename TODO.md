@@ -4,24 +4,26 @@
 C も PC だけで完結する。H・B2・D 以降は実機が必要で、
 着手前に完全なバックアップをリポジトリ外に取る。
 
-## H0. Jiritsu で /etc と /setting を読む【実機・読み取りのみ・最優先】
+## H0. Jiritsu で /etc と /setting を読む【完了・2026-11-24】
 
 **2026-11-24 に Jiritsu の読み取りが実機で通った**（姉妹リポジトリの
 プローブが `GET_FILE2` で status 0 と 517 バイト）。Jiritsu は
 `0x40` AdjustControl 経由なので権限レベルに依らない。
 `scripts/survey_readonly.py` がこの経路で下記を読むようになっている。
 
-- [ ] `/usr/share/pmbp/DeviceInfo.xml`（既知ファイル＝対照）が一致するか
-- [ ] `/etc/ssh/sshd_config` の有無と中身
-- [ ] `/etc/nsswitch.conf` の `passwd:` 行
-- [ ] `/etc/passwd`（**hash 欄は貼らない**）
-- [ ] `/setting/ulogio.bin` の現物（telnet フラグの現状。上書き前に必須）
+- [x] `/usr/share/pmbp/DeviceInfo.xml`（対照）517 バイト・ハッシュ一致
+- [x] `/etc/ssh/sshd_config` 3,094 バイト取得（`PermitRootLogin no`、
+      `PubkeyAuthentication no`、`MaxSessions 0`、SFTP 無効）
+- [x] `/etc/nsswitch.conf` は `passwd: files ssh` ＝ **`files` が効く**
+- [x] `/etc/passwd` 取得（root は uid 0・シェル `/bin/false`・パスワード `*`）
+- [x] `/setting/ulogio.bin` 2,900 バイト・109 レコード取得。**`TELN = 0`**
+- 結果： [docs/CAMERA_FACTS.md](docs/CAMERA_FACTS.md)
 
 ここが読めれば、**root SSH にファームウェア改変が要るかどうかが決まる**。
 nflasha10 / nflasha2 はアップデートパッケージに入っていないので、
 静的解析では絶対に埋まらない穴。
 
-## H. サービス権限レベルを測る【実機・読み取りのみ】
+## H. サービス権限レベルを測る【完了・2026-11-24：レベル A】
 
 [docs/ON_MEMORY.md](docs/ON_MEMORY.md) のとおり、**不揮発に何も書かずに
 端末が取れるかはレベル A かどうかだけで決まる**。これを最初に測る。
@@ -31,15 +33,13 @@ cd ~/git/a7c2/Sony-PMCA-RE
 sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_level.py
 ```
 
-- [ ] 出力の `Service level:` を記録する
-- [ ] あわせて `bk r 03000000` が 600 バイト返すか確認する（ホスト鍵の確認。
-      **返ってきた内容は公開しない**）
-- [ ] **A だったら**、続けて `pmca-console.py serviceshell` の `shell` を試し、
-      プロンプトが返るか、`grep -E '^(Uid|Gid):' /proc/self/status` が 0 かを確認する
-      （書き込みは発生しない。抜けると端末は自動で無効化される）
-- [ ] **B / C だったら**、USB 端末は使えないが Jiritsu は使える（H0）。
-      あわせて `push` / `pull` / `bootrom` が実際に拒否されるかも記録する
-      （`0xff01` / `0xff03` はどのレベルのテーブルにも無い、という静的判定の裏取り）
+- [x] `service level: A (adjCodeLevel 3)`。端末ゲートは**開いている**
+- [x] `bk r 03000000` は 600 バイト・PEM ヘッダありを確認（内容は非公開）
+- [x] FileControl（`0xff01`）は `error 128` で拒否＝静的判定どおり
+- [ ] **次の一手**：`pmca-console.py serviceshell` → `shell`。
+      プロンプトが返るか、`grep -E '^(Uid|Gid):' /proc/self/status` が 0 か、
+      `ls -l /bin/`（実在するシェル）、`ls -l /etc/shadow`、`cat /proc/osal/ulogio`、
+      `ps`（sshd が走っているか）を確認する。書き込みは発生しない
 
 ## A. telnet フラグの永続化先【完了・2026-11-24】
 

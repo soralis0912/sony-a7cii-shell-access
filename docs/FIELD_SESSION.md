@@ -38,6 +38,9 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/survey_readonl
 
 ## 2. 分岐：レポートの `service level:` を見る
 
+> 2026-11-24 の実測では **レベル A**（端末ゲート開）。
+> この機体では下の「レベル A だった場合」に進む。
+
 ### レベル A だった場合 → そのままシェルを試す（書き込みゼロ）
 
 ```bash
@@ -57,15 +60,19 @@ sudo ./venv/bin/python ./pmca-console.py serviceshell
 ```sh
 grep -E '^(Uid|Gid):' /proc/self/status
 mount
-ls -l /etc/ssh/
-cat /etc/ssh/sshd_config
-cat /etc/nsswitch.conf
-cat /etc/passwd
-ls -l /setting/ulogio.bin /cp/filter.bin
+ls -l /bin/ /sbin/
+ls -l /etc/shadow /etc/ssh/
 cat /proc/osal/ulogio
-ls -l /bin/sh /bin/busybox /usr/sbin/sshd
-ls -ld /tmp_wbshd /tmp_network/ssh
+ps
+ls -ld /tmp_wbshd /tmp_network /tmp_network/ssh
+ls -l /setting/ulogio.bin /setting/filter.bin /cp/filter.bin
 ```
+
+`sshd_config` / `nsswitch.conf` / `/etc/passwd` / `/setting/ulogio.bin` は
+1 の読み取りで取得済みなので、ここでは繰り返さない
+（内容は [CAMERA_FACTS.md](CAMERA_FACTS.md)）。
+ここで知りたいのは **どのシェルが実在するか**、`/etc/shadow` の有無、
+sshd が走っているか、`/tmp_wbshd` が本当に tmpfs か。
 
 - [ ] 出力を全部貼る。特に `sshd_config` と `nsswitch.conf` と `mount`
 - [ ] `Ctrl+C` で端末を抜け、`exit` でシェルを閉じる
