@@ -1,5 +1,23 @@
 # 端末ゲートの正体（静的解析、2026-11-24）
 
+> **結論（2026-11-24、実機）：このゲートは閉じていなかった。**
+> 実行中の `libsencore.so` では TERM_MODE のフラグバイトが**既に `0x00`**
+> （ファイル上は `0x80`）で、`terminal_change_function_is_disabled` も `0x00`。
+> つまり**フラグ仮説は外れ**で、`shell` が通らない原因は別にある。
+> 実測値：
+>
+> ```text
+> libsencore.so base: 0x007f94dbd000
+> record at +0x2782c: 0x5f 0x02 0x3d 0x00 0x01 0x06 0x1f 0x00
+> terminal_change_function_is_disabled (+0x6d9a0): 0x00
+> ```
+>
+> 何かが実行時にこのフラグを下げている（レベル A の初期化と見られる）。
+> `jit_termgate` は署名照合で `0x80` を期待していたため、**何も書かずに中止した**。
+>
+> **端末はもう必要ない。** root でコードが走るので、Jiritsu のファイル経路を
+> コマンドチャネルにした（`native/jit/jit_sh.c`）。
+
 `shell` が「`Terminal activated.` は出るのに入力が届かない」件を、
 ファームウェア側から追った結果。**実機では未検証。**
 

@@ -68,7 +68,8 @@ SET_FILE_PATH = 0x400F
 GET_FILE2 = 0x4011
 GET_FILELIST = 0x400A      # read-only: what is already on the partition
 
-FILE_LIBJIT = 2            # /tmp/jiritsu/libJit.so
+FILE_DIAC = 1              # /tmp/jiritsu/DIAC.csv - the command channel
+FILE_LIBJIT = 2            # /tmp/jiritsu/libJit.so - writing it triggers dlopen
 MODE_RAW = 0               # write the bytes as given
 
 MARKER = "/tmp/jiritsu/jit_hello.txt"
@@ -195,12 +196,31 @@ def list_area(camera):
     return None
 
 
+def set_file(camera, index: int, data: bytes):
+    """One SET_FILE: write `data` to the path index resolves to."""
+    payload = bytes([0x00, index, MODE_RAW]) + data
+    response = camera._sendAdjustControlPacket(CATEGORY, SET_FILE, payload)
+    status = int.from_bytes(response[:4], "little") if len(response) >= 4 else None
+    if status:
+        code = code_of(status)
+        print("   index %d: status 0x%08x -> code %d: %s"
+              % (index, status, code, ERRORS.get(code, "unknown")))
+    else:
+        print("   index %d: %d bytes written" % (index, len(data)))
+    return status
+
+
 def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool,
-        extra_reads=()) -> None:
+        extra_reads=(), command: str | None = None) -> None:
     camera.readHasp()
     print("what is on the partition now (read-only):")
     list_area(camera)
     print()
+    if command is not None:
+        print("command to run on the camera, as root:")
+        for line in command.splitlines():
+            print("   | %s" % line)
+        print()
     print("about to write %d bytes to /tmp/jiritsu/libJit.so (file number %d)"
           % (len(blob), FILE_LIBJIT))
     print("that path is what get_jiritsu_area_filename(2) returns; the switch in")
@@ -263,6 +283,9 @@ def main() -> int:
     ap.add_argument("--yes", action="store_true", help="skip the confirmation")
     ap.add_argument("--list-only", action="store_true",
                     help="only list what is under /tmp/jiritsu and exit; writes nothing")
+    ap.add_argument("--run", metavar="CMD",
+                    help="shell command to run on the camera: it is written to "
+                         "DIAC.csv first, and libJit_sh.so runs it as root")
     ap.add_argument("--read", action="append", default=[], metavar="PATH",
                     help="also read this absolute path back afterwards; repeatable")
     args = ap.parse_args()
@@ -289,7 +312,7 @@ def main() -> int:
             print("read-only listing of /tmp/jiritsu (nothing is written):")
             list_area(camera)
         else:
-            run(camera, blob, args.dir, args.yes, args.read)
+            run(camera, blob, args.dir, args.yes, args.read, args.run)
         done = True
 
     senserShellCommand(complete=collect)

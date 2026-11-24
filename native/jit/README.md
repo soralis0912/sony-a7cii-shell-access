@@ -8,6 +8,7 @@
 | `jit_nolibc.c` | **既定。libc を一切使わず**、生のシステムコールで `/tmp/jiritsu/jit_hello.txt` に pid/uid/euid を書く。`DT_NEEDED` が無いので**カメラの glibc 版数が問題になりえない** |
 | `jit.c` | 同じことを libc で書いたもの。読みやすいが glibc 向けクロスツールチェインが必要 |
 | `jit_probe.c` | **読み取り専用の調査ライブラリ。** カメラの状態を集めて `/tmp/jiritsu/jit_report.txt` に書くだけ。設定も既存ファイルも変更しない |
+| `jit_sh.c` | **コマンドチャネル。** `/tmp/jiritsu/DIAC.csv` を読み、`/bin/sh -c` で root 実行し、標準出力と標準エラーを `/tmp/jiritsu/jit_report.txt` に落とす。**USB 端末の代わり** |
 | `jit_termgate.c` | **端末ゲートを開ける。** `libsencore.so` の `.rodata` にある TERM_MODE のフラグバイトを `0x80` → `0x00` にする。`mprotect` が必要。**不揮発には書かない**（private mapping の copy-on-write なので電源を切れば戻る） |
 | `build.sh` | 使えるツールチェインを自動で選んでビルドし、`check.sh` を実行する |
 | `check.sh` | 出来たものがカメラで読めるかを検証する（ELF 種別、3シンボル、`INIT_ARRAY`、要求 glibc、未定義シンボル） |
@@ -133,6 +134,33 @@ maps のパース処理は、同じコードをホストでネイティブにコ
 2. **同じ電源サイクルのうちに** `pmca-console.py serviceshell` → `shell` を試す
    （パッチはプロセスのメモリ上にしかないので、電源を切ると消える）
 3. 繋がれば、相手は pid 528 の `/bin/ash --`
+
+## コマンドチャネル（USB 端末の代わり）
+
+端末ゲートを開ける必要はなかった。root でコードが走るなら、
+**Jiritsu のファイル経路をそのままコマンドの通り道にできる**。
+
+```text
+ホスト: SET_FILE 索引1 (DIAC.csv)   ← コマンド文
+ホスト: SET_FILE 索引2 (libJit.so)  ← 書くと dlopen される＝実行の引き金
+カメラ: DIAC.csv を /bin/sh -c で実行、出力を jit_report.txt へ
+ホスト: SET_FILE_PATH + GET_FILE2 で jit_report.txt を読み戻す
+```
+
+1バッチあたり書き込み2回・読み戻し1回。使い方：
+
+```bash
+cd ~/git/a7c2/Sony-PMCA-RE
+sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/jit_load.py \
+  ~/git/a7c2/sony-a7cii-shell-access/native/jit/libJit_sh.so \
+  --run 'id; uname -a; ls -l /etc/ssh'
+```
+
+複数行でもよい（`-c` に丸ごと渡すので、パイプもリダイレクトも使える）。
+`/bin/sh` は実在する（423,000 バイト、busybox）。
+
+**これは渡したものを root で実行する。** コマンドの出所は直前に
+ホストが書いた DIAC.csv だけで、他は参照しない。
 
 ## 実機で使うときの順番
 
