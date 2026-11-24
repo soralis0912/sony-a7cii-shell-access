@@ -7,6 +7,7 @@
 | --- | --- |
 | `jit_nolibc.c` | **既定。libc を一切使わず**、生のシステムコールで `/tmp/jiritsu/jit_hello.txt` に pid/uid/euid を書く。`DT_NEEDED` が無いので**カメラの glibc 版数が問題になりえない** |
 | `jit.c` | 同じことを libc で書いたもの。読みやすいが glibc 向けクロスツールチェインが必要 |
+| `jit_probe.c` | **読み取り専用の調査ライブラリ。** カメラの状態を集めて `/tmp/jiritsu/jit_report.txt` に書くだけ。設定も既存ファイルも変更しない |
 | `build.sh` | 使えるツールチェインを自動で選んでビルドし、`check.sh` を実行する |
 | `check.sh` | 出来たものがカメラで読めるかを検証する（ELF 種別、3シンボル、`INIT_ARRAY`、要求 glibc、未定義シンボル） |
 
@@ -70,6 +71,35 @@ Homebrew は第三者タップの formula を `brew trust` するまで読み込
 `aarch64-elf-gcc`（homebrew-core）はベアメタル向けで glibc が無いため、
 `jit.c` をそのままビルドできない。glibc 向けのクロスツールチェイン
 （`messense/macos-cross-toolchains` の `aarch64-unknown-linux-gnu`）を使う。
+
+## `jit_probe.c` が集めるもの
+
+| 対象 | 何が分かるか |
+| --- | --- |
+| `/proc/self/cmdline` / `status` | **どのプロセスが我々を読み込んだか**、uid/gid |
+| `uname` | カーネル版数 |
+| `/proc/mounts` | `/tmp_wbshd` が tmpfs か、`/tmp`・`/etc`・`/var` の実体 |
+| `/bin` `/sbin` `/usr/bin` `/usr/sbin` の一覧 | **実在するシェル** |
+| `/etc/ssh` の一覧 | ホスト鍵が置かれているか |
+| `/etc/shadow` 他の**サイズのみ** | 存在確認。**ハッシュは読まない** |
+| `/proc/<pid>/cmdline` 全件 | `ps` 相当。sshd が走っているか |
+
+ビルド：
+
+```bash
+aarch64-elf-gcc -shared -fPIC -nostdlib -O1 -o libJit_probe.so jit_probe.c
+./check.sh libJit_probe.so
+```
+
+送信（送るファイル名は自由。カメラ側では常に `/tmp/jiritsu/libJit.so` になる）：
+
+```bash
+cd ~/git/a7c2/Sony-PMCA-RE
+sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/jit_load.py \
+  ~/git/a7c2/sony-a7cii-shell-access/native/jit/libJit_probe.so
+```
+
+送信後、`jit_load.py` が `jit_report.txt` を自動で読み戻す。
 
 ## 実機で使うときの順番
 

@@ -72,6 +72,7 @@ FILE_LIBJIT = 2            # /tmp/jiritsu/libJit.so
 MODE_RAW = 0               # write the bytes as given
 
 MARKER = "/tmp/jiritsu/jit_hello.txt"
+REPORT = "/tmp/jiritsu/jit_report.txt"
 JITLOG = "/tmp/jiritsu/jit.log"
 LIMIT = 25 * 1024 * 1024   # the handler refuses once /tmp/jiritsu/* passes this
 
@@ -194,7 +195,8 @@ def list_area(camera):
     return None
 
 
-def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool) -> None:
+def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool,
+        extra_reads=()) -> None:
     camera.readHasp()
     print("what is on the partition now (read-only):")
     list_area(camera)
@@ -225,8 +227,11 @@ def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool) -> None:
         if status:
             print("  inner status %d: %s" % (status, ERRORS.get(status, "unknown")))
 
-    for path, label in ((MARKER, "the marker our constructor writes"),
-                        (JITLOG, "the loader's own log")):
+    reads = [(MARKER, "the marker jit.c writes"),
+             (REPORT, "the report jit_probe.c writes"),
+             (JITLOG, "the loader's own log")]
+    reads += [(p, "asked for with --read") for p in extra_reads]
+    for path, label in reads:
         data, exc = jiritsu_read(camera, path)
         print("\n%s (%s):" % (path, label))
         if exc is not None:
@@ -236,8 +241,12 @@ def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool) -> None:
         local.write_bytes(data)
         print("   %d bytes, saved to %s" % (len(data), local))
         text = data.decode("latin1")
-        for line in text.splitlines()[:40]:
+        lines = text.splitlines()
+        for line in lines[:400]:
             print("   | %s" % line)
+        if len(lines) > 400:
+            print("   | ... %d more lines, all of them in %s"
+                  % (len(lines) - 400, local))
         if path == MARKER and "libJit loaded" in text:
             print("\n   the library was loaded and our code ran inside the service.")
         if path == JITLOG:
@@ -254,6 +263,8 @@ def main() -> int:
     ap.add_argument("--yes", action="store_true", help="skip the confirmation")
     ap.add_argument("--list-only", action="store_true",
                     help="only list what is under /tmp/jiritsu and exit; writes nothing")
+    ap.add_argument("--read", action="append", default=[], metavar="PATH",
+                    help="also read this absolute path back afterwards; repeatable")
     args = ap.parse_args()
 
     blob = b""
@@ -278,7 +289,7 @@ def main() -> int:
             print("read-only listing of /tmp/jiritsu (nothing is written):")
             list_area(camera)
         else:
-            run(camera, blob, args.dir, args.yes)
+            run(camera, blob, args.dir, args.yes, args.read)
         done = True
 
     senserShellCommand(complete=collect)
