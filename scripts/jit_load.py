@@ -233,19 +233,20 @@ def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool,
             print("nothing sent.")
             return
 
-    payload = bytes([0x00, FILE_LIBJIT, MODE_RAW]) + blob
     try:
-        response = camera._sendAdjustControlPacket(CATEGORY, SET_FILE, payload)
+        if command is not None:
+            print("writing the command to %s (index %d):"
+                  % (KNOWN[FILE_DIAC], FILE_DIAC))
+            if set_file(camera, FILE_DIAC, command.encode() + b"\n"):
+                print("   the command was not stored; not sending the library")
+                return
+        print("writing the library to %s (index %d):"
+              % (KNOWN[FILE_LIBJIT], FILE_LIBJIT))
+        set_file(camera, FILE_LIBJIT, blob)
     except Exception as exc:
         print("SET_FILE refused: %s" % exc)
         print("(error codes: %s)" % ", ".join("%d=%s" % kv for kv in ERRORS.items()))
         return
-    print("SET_FILE returned %d byte(s)%s"
-          % (len(response), ": " + response.hex() if response else ""))
-    if len(response) >= 4:
-        status = int.from_bytes(response[:4], "little")
-        if status:
-            print("  inner status %d: %s" % (status, ERRORS.get(status, "unknown")))
 
     reads = [(MARKER, "the marker jit.c writes"),
              (REPORT, "the report jit_probe.c writes"),
