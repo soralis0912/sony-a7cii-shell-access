@@ -1,7 +1,14 @@
 # Custom LUTs
 
-Verified on an ILCE-7CM2, firmware 2.01. The file is on the camera; whether
-the menu offers it is **not yet confirmed** (see "What is still open").
+Verified end to end on an ILCE-7CM2, firmware 2.01: a 33x33x33 `.cube`
+generated from scratch, copied to `PRIVATE/SONY/PRO/LUT` on the memory card,
+imported through the camera's own menu, selected, and **the picture changed**.
+The test LUT is an identity with red and blue exchanged, so the swap is
+unmistakable rather than a matter of taste.
+
+Neither service mode nor the root shell was needed for that. What the shell did
+contribute is the explanation for the two dead ends on the way - see "How the
+camera actually finds user LUTs" below.
 
 ## `/usr/data/lut` is a writable partition of its own
 
