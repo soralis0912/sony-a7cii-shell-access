@@ -161,8 +161,22 @@ int   RunScriptI(void *a)    { (void)a; return 0; }
 2. 【PC】最小の `libJit.so` を作る。**`CreateScriptI` / `LoadScriptI` /
    `RunScriptI` の3つをエクスポートし、`CreateScriptI` は非ゼロを返す**こと
    （上記「最小の `libJit.so` の形」）。aarch64 のクロスツールチェインが必要。
-3. 【実機】`SET_FILE` を**番号2・モード0**で送り、戻り値を確認する。
-4. 【実機】`SET_FILE_PATH` + `GET_FILE2` で、置いたファイルが
-   書かれていること（＝コンストラクタが走ったこと）を読み戻して確かめる。
+3. 【実機】`scripts/jit_load.py` を実行する。これが
+   `SET_FILE`（番号2・モード0）の送信と、`/tmp/jiritsu/jit_hello.txt` と
+   `/tmp/jiritsu/jit.log` の読み戻しまでを1本でやる：
+
+   ```bash
+   cd ~/git/a7c2/Sony-PMCA-RE
+   sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/jit_load.py \
+     ~/git/a7c2/sony-a7cii-shell-access/native/jit/libJit.so
+   ```
+
+   送る前に ELF の種別・アーキテクチャ・3シンボル・サイズを検査し、
+   確認を求める。書き込み系で送るのは `SET_FILE` の1回だけで、
+   読み戻しは実証済みの `SET_FILE_PATH` + `GET_FILE2`。
+4. 【実機】出力の `jit_hello.txt` に `libJit loaded` と pid/uid/euid が
+   出ていれば、**サービスプロセス内でコードが走った証明**になる。
+   出なければ `jit.log` の段階表示（`[JIT] libJit_so dll open B.` など）で
+   どこで止まったか分かる。
 5. 通れば、その中から `/etc/ssh/sshd_config` と `/etc/passwd` を書き換える
    （[SSH.md](SSH.md)、[CAMERA_FACTS.md](CAMERA_FACTS.md)）。
