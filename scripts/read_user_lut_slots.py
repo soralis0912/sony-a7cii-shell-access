@@ -3,15 +3,21 @@
 
 Reads only. Nothing is written to the backup and no file is sent.
 
-The camera keeps 50 user-LUT slots, each described by five backup properties.
-The addresses come from the feature-research repository's BKID inventory for
-firmware 2.01, where each family is 50 consecutive ids:
+This camera has **16** user-LUT slots, each described by five backup
+properties. The families are 16 wide and tile without gaps, which is how the
+layout was pinned down on hardware:
 
-    IS_EXIST_USER_LUT<n>              0x02cf105c + n   default 0x00 (EMPTY)
-    USER_LUT_FILE_ID<n>               0x02cf106c + n   default 64 zero bytes
-    USER_LUT_ATTR_INPUT_GAMUT<n>      0x02cf107c + n   default 0x01
-    USER_LUT_ATTR_OUTPUT_PROCAM<n>    0x02cf1450 + n   default 0x00
-    USER_LUT_ATTR_AE_LEVEL_OFFSET<n>  0x02cf104c + n   default 0x00
+    0x02cf104c .. 0x02cf105b   ATTR_AE_LEVEL_OFFSET 0..15   default 0x00
+    0x02cf105c .. 0x02cf106b   IS_EXIST_USER_LUT    0..15   default 0x00
+    0x02cf106c .. 0x02cf107b   USER_LUT_FILE_ID     0..15   default 64 zeros
+    0x02cf107c .. 0x02cf108b   ATTR_INPUT_GAMUT     0..15   default 0x01
+    0x02cf1450 .. 0x02cf145f   ATTR_OUTPUT_PROCAM   0..15   default 0x00
+
+The BKID inventory names slots up to 49 and, read naively as base + n, those
+names run straight into the next family: IS_EXIST16 would be 0x02cf106c, which
+is really FILE_ID0. An earlier version of this script did exactly that and
+reported slots 16..49 as all "changed" - it was reading real properties under
+the wrong labels. Asking for more than 16 slots is refused for that reason.
 
 Point of the exercise: import a LUT through the camera's own menu, from
 PRIVATE/SONY/PRO/LUT on the card, then run this. Whatever differs from the
@@ -40,7 +46,7 @@ FAMILIES = [
     ("ATTR_OUTPUT_PROCAM", 0x02CF1450, "00"),
     ("ATTR_AE_LEVEL_OFF", 0x02CF104C, "00"),
 ]
-SLOTS = 50
+SLOTS = 16
 
 
 def absent(data) -> bool:
@@ -124,10 +130,14 @@ def read_slots(camera, slots: int, show_all: bool) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--slots", type=int, default=SLOTS,
-                    help="how many slots to read (default %d)" % SLOTS)
+                    help="how many slots to read (default and maximum %d)" % SLOTS)
     ap.add_argument("--all", action="store_true",
                     help="print every slot, not just the changed ones")
     args = ap.parse_args()
+    if not 1 <= args.slots <= SLOTS:
+        print("this camera has %d slots; reading past that reads the next "
+              "property family under the wrong name" % SLOTS, file=sys.stderr)
+        return 2
 
     from pmca.commands.usb import senserShellCommand
     print("using pmca from %s" % PMCA_ROOT, flush=True)

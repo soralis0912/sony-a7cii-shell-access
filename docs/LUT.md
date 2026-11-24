@@ -181,17 +181,16 @@ the Jiritsu path is available and there is no shell to stream through.
 
 ## The 50 slots, and what to read after an import
 
-Each user-LUT slot is five backup properties. Addresses from the
-feature-research repository's BKID inventory for firmware 2.01, each family
-being 50 consecutive ids:
+Each user-LUT slot is five backup properties. This camera has **16** slots,
+and the five families are 16 wide and tile without gaps:
 
-| family | slot 0 | firmware default |
+| range | family | firmware default |
 | --- | --- | --- |
-| `IS_EXIST_USER_LUT<n>` | `0x02cf105c` | `00` (EMPTY) |
-| `USER_LUT_FILE_ID<n>` | `0x02cf106c` | 64 zero bytes |
-| `USER_LUT_ATTR_INPUT_GAMUT<n>` | `0x02cf107c` | `01` |
-| `USER_LUT_ATTR_OUTPUT_PROCAM<n>` | `0x02cf1450` | `00` |
-| `USER_LUT_ATTR_AE_LEVEL_OFFSET<n>` | `0x02cf104c` | `00` |
+| `0x02cf104c`-`0x02cf105b` | `USER_LUT_ATTR_AE_LEVEL_OFFSET` 0-15 | `00` |
+| `0x02cf105c`-`0x02cf106b` | `IS_EXIST_USER_LUT` 0-15 | `00` (EMPTY) |
+| `0x02cf106c`-`0x02cf107b` | `USER_LUT_FILE_ID` 0-15 | 64 zero bytes |
+| `0x02cf107c`-`0x02cf108b` | `USER_LUT_ATTR_INPUT_GAMUT` 0-15 | `01` |
+| `0x02cf1450`-`0x02cf145f` | `USER_LUT_ATTR_OUTPUT_PROCAM` 0-15 | `00` |
 
 `FILE_ID` being a 64-byte field rather than a number is the interesting part -
 that is the right shape for the name the menu shows.
@@ -224,10 +223,25 @@ then set `IS_EXIST_USER_LUT<n>` and `USER_LUT_FILE_ID<n>`. The file half needs
 only the shell; the two properties need the backup, so either service mode or
 whatever `/setting/Backup.bin` turns out to allow.
 
-### Only 16 slots exist on this model
+### How the 16-slot layout was pinned down
 
-The inventory lists 50 slots and gives every one of them the same firmware
-default, but this camera answers for only the first 16. The rest come back
-empty rather than as an error, which the first version of the reader wrongly
-counted as "changed" - hence a nonsense report of slots 16..49 all differing.
-The script now reports those separately as not provisioned.
+The BKID inventory names slots up to 49 for every family. Taken as base + n
+those names collide: `IS_EXIST16` would be `0x02cf106c`, which is `FILE_ID0`.
+The first version of the reader did take them that way and reported slots
+16..49 as all "changed", which looked like a finding and was not - it was
+reading real properties under the wrong labels.
+
+Reading slots 0..19 in full settled it. The same addresses appear twice with
+different labels and identical values:
+
+| address | value | labelled at slot 0 | labelled at slot 16 |
+| --- | --- | --- | --- |
+| `0x02cf105c` | `01` | IS_EXIST | ATTR_AE_LEVEL_OFFSET |
+| `0x02cf106c` | `"SWAPTEST.cube"` | FILE_ID | IS_EXIST |
+| `0x02cf107c` | `01` | ATTR_INPUT_GAMUT | FILE_ID |
+
+The values agree; only the labels slid. So each family stops after 16, and the
+addresses past `ATTR_INPUT_GAMUT15` at `0x02cf108b` belong to unrelated
+properties - `0x02cf108e`, for instance, returns a 13-byte array. Nothing came
+back empty at any point, so the earlier "not provisioned" reading was wrong
+too. The script now refuses to be asked for more than 16.
