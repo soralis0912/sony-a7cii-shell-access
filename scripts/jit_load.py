@@ -116,20 +116,67 @@ def jiritsu_read(camera, path: str):
     return response[4:], None
 
 
+# the five paths get_jiritsu_area_filename resolves by index
+KNOWN = {0: "/tmp/jiritsu/tmmc.jit", 1: "/tmp/jiritsu/DIAC.csv",
+         2: "/tmp/jiritsu/libJit.so", 3: "/tmp/jiritsu/jit.log",
+         4: "/tmp/jiritsu/history.txt"}
+
+
+def show(label: str, response: bytes) -> int | None:
+    """Print a response as hex plus its u32 status, and return the status."""
+    print("   %s -> %d byte(s): %s" % (label, len(response),
+                                       response[:64].hex(" ") or "(empty)"))
+    if len(response) < 4:
+        return None
+    status = int.from_bytes(response[:4], "little")
+    meaning = ERRORS.get(status, "")
+    print("      status 0x%08x (%d)%s" % (status, status,
+                                          "  " + meaning if meaning else
+                                          ("  ok" if status == 0 else "")))
+    body = response[4:]
+    if body:
+        text = "".join(chr(c) if 32 <= c < 127 else "." for c in body[:600])
+        print("      body: %s" % text)
+    else:
+        print("      no body")
+    return status
+
+
 def list_area(camera):
-    """Read-only: ask what is already under /tmp/jiritsu before writing there."""
+    """Read-only: what is already under /tmp/jiritsu.
+
+    GET_FILELIST's argument form is not established, so try a few, and then
+    fall back to asking for each known path by name with the pair that is
+    confirmed working (SET_FILE_PATH + GET_FILE2).
+    """
+    print("  GET_FILELIST, three argument forms:")
     for payload in (b"\x00", b"\x00\xff\x00", b""):
+        label = "GET_FILELIST(%s)" % (payload.hex() or "empty")
         try:
-            response = camera._sendAdjustControlPacket(CATEGORY, GET_FILELIST, payload)
+            show(label, camera._sendAdjustControlPacket(CATEGORY, GET_FILELIST, payload))
         except Exception as exc:
-            print("   GET_FILELIST(%s) refused: %s" % (payload.hex() or "empty", exc))
-            continue
-        print("   GET_FILELIST(%s) returned %d byte(s)"
-              % (payload.hex() or "empty", len(response)))
-        if response:
-            text = "".join(chr(c) if 32 <= c < 127 else "." for c in response[:800])
-            print("   | %s" % text)
-        return response
+            print("   %s refused: %s" % (label, exc))
+
+    print()
+    print("  each known path, read-only, by name and by absolute path:")
+    for idx, path in KNOWN.items():
+        name = path.rsplit("/", 1)[1]
+        for target, how in ((name.encode(), "relative"),
+                            (b"../.." + path.encode(), "absolute")):
+            try:
+                camera._sendAdjustControlPacket(CATEGORY, SET_FILE_PATH, b"\x00" + target)
+                response = camera._sendAdjustControlPacket(CATEGORY, GET_FILE2,
+                                                           b"\x00\xff\x00")
+            except Exception as exc:
+                print("   [%d] %-28s %-8s refused: %s" % (idx, path, how, exc))
+                continue
+            status = int.from_bytes(response[:4], "little") if len(response) >= 4 else None
+            size = max(0, len(response) - 4)
+            note = "exists, %d bytes" % size if status == 0 and size else (
+                "status 0x%08x" % status if status else "status 0, empty")
+            print("   [%d] %-28s %-8s %s" % (idx, path, how, note))
+            if status == 0 and size:
+                break
     return None
 
 
