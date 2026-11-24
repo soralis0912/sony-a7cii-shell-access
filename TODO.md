@@ -43,8 +43,13 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_
       A7 IV と一致。PMCA の添字1も同じ。**取り違えではない**
 - [x] 空の `Error:` の正体は PMCA の `GenericUsbException()`（引数なし）。
       落ちているのは OUT `0x04` への**書き込み**で、本当の USB エラーは捨てられている
-- [ ] **次の一手**：`scripts/terminal_write_error.py` で本当のエラーを拾う。
-      stall なら端末が入力を受けていない、host 側エラーなら Mac の問題
+- [x] **原因確定（静的解析、2026-11-24）**：`0x00F1` のハンドラ
+      `libpro00.so` の `command00F1` は **`mov w0,#1; ret` の8バイトスタブ**。
+      成功を返すだけで端末を作らない。**USB 端末はこのファームウェアには無い**
+- [ ] （任意）`scripts/terminal_write_error.py` で USB エラーの種類を確認する。
+      静的な結論のほうが強いので、やらなくても判断は変わらない
+- [ ] telnetd を起こす主体をカーネルモジュール側で確認する【PC のみ】。
+      userspace の `ulogio_telnetd_init` には呼び出し元が無い
       プロンプトが返るか、`grep -E '^(Uid|Gid):' /proc/self/status` が 0 か、
       `ls -l /bin/`（実在するシェル）、`ls -l /etc/shadow`、`cat /proc/osal/ulogio`、
       `ps`（sshd が走っているか）を確認する。書き込みは発生しない
@@ -143,7 +148,20 @@ p15 改変が必要だと分かった場合のみ、F まで到達し、かつ�
 - [ ] 書き込み後は**独立した完全回読**を行ってから起動する
 - [ ] 復旧手段（改変前の自機 p15）を必ず手元に残す
 
-## I. オンメモリ sshd を立てる【実機・端末が取れた後】
+## I. SSH を通す【実機・書き込みが必要】
+
+USB 端末が死んでいるので、**シェル無しで `/etc` を書く**のが本線になった。
+
+- [ ] Jiritsu `SET_FILE`（`0x4007`）/ `SET_FILE2`（`0x4010`）の引数形式を
+      `libsencore.so` / `libJiritsu.so` から特定する【PC のみ】
+- [ ] 揮発領域（`/tmp_wbshd`）に小さなファイルを書き、`GET_FILE2` で
+      読み戻して一致を確認する【実機】
+- [ ] 通れば `/etc/ssh/sshd_config`（`PermitRootLogin` / `PubkeyAuthentication` /
+      `MaxSessions` / `AuthorizedKeysFile`）と `/etc/passwd`（root のシェル）を
+      書き換える。**先に現物を保管**（取得済み）
+- [ ] 元に戻せることを確認してから本番
+
+## I2. オンメモリ sshd を立てる【実機・シェルが取れた場合のみ】
 
 [docs/ON_MEMORY.md](docs/ON_MEMORY.md) 5章の設計。不揮発には何も残さない。
 

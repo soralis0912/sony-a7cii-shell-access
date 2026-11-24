@@ -20,7 +20,69 @@
 Senser FileControl（`0xff01`）は `error 128` で拒否された。
 どのレベルのテーブルにも無いという静的判定の裏が取れた。
 
-## `shell` は繋がらなかった（2026-11-24）
+## USB 端末は**存在しない**（2026-11-24、静的解析で確定）
+
+`shell` が通らない理由は、エンドポイントでも ulogio でもホスト側でもなかった。
+**端末有効化コマンド自体が何もしないスタブ**だった。
+
+`ProductInfoFunc` は受け取ったコマンドをプラグインモジュールへ振る：
+
+```c
+PluginModule = GetPluginModule("libpro%02X.so", 0x10u, HIBYTE(v6));
+return CreatePluginCommand(PluginModule, v6, ...);
+```
+
+コマンド `0x00F1`（TERM_CHANGE）は上位バイト `0x00` なので
+**`lib/libpro00.so`** の `command00F1` に入る。そのモジュールは 6,032 バイトで、
+エクスポートは `command001F`（READ_HASP）と `command00F1` の2つだけ。
+`command00F1` の中身は**8バイト**：
+
+```asm
+0000000000000a64 <command00F1>:
+     a64:  mov  w0, #0x1      ; 成功を返す
+     a68:  ret
+```
+
+比較のため `command001F` は 0xc0 バイトあり、`Read_Hasp` / `Reset_Hasp` を
+実際に呼んでログも出す。つまり **`0x00F1` だけが中身を抜かれている**。
+
+これで観測が全部つながる：
+
+| 観測 | 説明 |
+| --- | --- |
+| ゲートは開いている（レベル A） | `terminal_change_function_is_disabled == 0`。ここは本物 |
+| `Terminal activated.` と出る | コマンドが成功（`1`）を返すから。PMCA はそれを信じる |
+| 入力が一切届かない | 端末は作られていない。OUT `0x04` を読む主体がいない |
+| 空の `Error:` | 書き込みが USB エラーになり、PMCA がメッセージを捨てる |
+
+**A7 IV で「ULOGIO の復元」が必要だったのと同じ構図。** あちらは 6.02 で
+端末生成コードが削られていたので旧 1.05 から移植していた。A7C II 2.01 では
+ulogio 側のコード（telnetd 含む）は残っているが、**サービス側の入口が
+スタブ化**されている。
+
+### telnetd にも呼び出し元がいない
+
+`libosal_ulogio.so` の `ulogio_telnetd_init`（VA `0x50b4`）への参照は
+PLT/GOT（`0xc80` / `0x19310`）だけで、**ライブラリ内にも他のバイナリにも
+呼び出し元が無い**（p15 全体を検索しても import しているのは
+`libosal_ulogio.so` 自身のみ）。`ulogio_filter_userspace_init` も同じ形。
+
+つまり **`TELN = 1` にしただけで telnet が上がる保証は無い**。
+フラグを読むのはカーネルモジュール側なので、listener を実際に起こすのが
+誰なのかは kmod 側の確認が必要（未了）。
+
+### 残っている現実的な経路
+
+| 経路 | 状態 |
+| --- | --- |
+| USB 端末 | **死んでいる**。入口がスタブ。コード改変なしでは無理 |
+| telnet | フラグは書けるが、起こす主体が未確認 |
+| **SSH** | **最有力**。sshd は appFw の InfraSshManager が実際に起動する経路を持ち、設定は書き込み可能な `/etc` にある |
+
+どれも結局 **書き込み手段**（Jiritsu `SET_FILE` `0x4007`）に戻る。
+読み取りは実機で通っているので、次に検証すべきはそこ。
+
+## 旧記述：`shell` は繋がらなかった（2026-11-24）
 
 レベル A なので端末ゲート自体は開いており、PMCA の `shell` は
 `Terminal activated.` まで進む。だが**入力したコマンドは一切届かず**、

@@ -30,7 +30,8 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 | Telnet はどうか | A7 IV 6.02 より条件が良い。`libosal_ulogio.so` に telnetd の実装（`ulogio_telnetd_init` / `_mainloop` / `ulogio_filter_set_telnet`）が**残っている**ので、旧版からの移植が不要。有効化フラグの在処も確定：`/setting/ulogio.bin` の `TELN` レコード1件（12バイト）で足り、`bk w` では上げられない |
 | ホスト鍵と sshd の設定はどこか | **確定・実機で取得済み。** ホスト秘密鍵はバックアッププロパティ `0x03000000`（600バイト、実機で 600 バイト・PEM を確認）。`sshd_config` は nflasha10 の `/etc/ssh/sshd_config` に実在し（3,094バイト）、`PermitRootLogin no` / `PubkeyAuthentication no` / `MaxSessions 0` / SFTP 無効。`nsswitch.conf` が `passwd: files ssh` なので **NSS のバイトパッチは不要**、`/etc/passwd` を直せばよい |
 | では実機でシェルが取れるのか | **まだ取れない。** ただし恒久的な書き込みを伴わない経路が1つ見つかった（下記） |
-| 書き込みゼロで端末が取れるか | **この機体はレベル A で、端末ゲートが開いていることを実機で確認（2026-11-24）。** カメラのコンソールには初めから `ash --login` が走っているので、`serviceshell` の `shell` が次の一手。[docs/CAMERA_FACTS.md](docs/CAMERA_FACTS.md) |
+| 書き込みゼロで端末が取れるか | **取れない（2026-11-24 確定）。** 権限レベルは A でゲートも開いているが、端末有効化コマンド `0x00F1` のハンドラ（`libpro00.so` の `command00F1`）が **`mov w0,#1; ret` の8バイトスタブ**で、成功を返すだけで端末を作らない。A7 IV で ULOGIO の復元が必要だったのと同じ構図。[docs/CAMERA_FACTS.md](docs/CAMERA_FACTS.md) |
+| では何が残っているか | **SSH が最有力。** sshd は実際に起動される経路を持ち、設定（`sshd_config`・`passwd`）は書き込み可能な `/etc` にある。必要なのは Jiritsu の書き込み（`SET_FILE` `0x4007`）の検証 |
 | レベルが A でなかったら終わりか | **いいえ（2026-11-24 訂正）。** Jiritsu は `0x40` AdjustControl 経由で、全レベルのテーブルにある。実機でファイル読み取りが通っており、同じカテゴリに `SET_FILE` も定義されている。端末を経由せず `/setting/ulogio.bin`（telnet）や `/etc/ssh/sshd_config`（SSH）に届く可能性がある |
 
 つまり「できるか」に対しては **部品は全部ある・パッチの設計も流用できる、

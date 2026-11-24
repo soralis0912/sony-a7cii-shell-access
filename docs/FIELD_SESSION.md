@@ -79,6 +79,11 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/terminal_write
 > **エンドポイントはディスクリプタから判断すること。** 転送を試すなら、
 > 根拠のある1組だけに限る。
 
+> **2026-11-24 確定：この機種では `shell` は通らない。**
+> 端末有効化コマンド `0x00F1` のハンドラが成功を返すだけのスタブで、
+> 端末が作られない（[CAMERA_FACTS.md](CAMERA_FACTS.md)）。
+> 以下は他機種・将来版のための参考として残す。
+
 ### 参考：`shell` が通る場合（書き込みゼロ）
 
 ```bash
