@@ -9,6 +9,7 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 リポジトリです。**ここにあるのは静的解析による可否判定と検証計画で、実機での
 シェル取得は未達成**です。
 
+- **実機を触るときの手順書**： [docs/FIELD_SESSION.md](docs/FIELD_SESSION.md)
 - 判定の要約： [docs/FEASIBILITY.md](docs/FEASIBILITY.md)
 - **オンメモリ（不揮発に書かずに）取れるか**： [docs/ON_MEMORY.md](docs/ON_MEMORY.md)
 - SSH（既存 sshd の再利用）： [docs/SSH.md](docs/SSH.md)
@@ -70,13 +71,16 @@ python3 scripts/ulogio_filter_file.py --telnet 1 -o /tmp/ulogio.bin
 python3 scripts/ulogio_filter_file.py --parse /tmp/ulogio.bin
 ```
 
-実機側は、サービスモードで権限レベルだけを測る読み取り専用プローブがあります
-（バックアップにもファイルにも書きません）。
+実機側は、1本で読み取り調査を済ませてレポートを出すスクリプトがあります
+（バックアップにもファイルにも書きません）。手順は
+[docs/FIELD_SESSION.md](docs/FIELD_SESSION.md)。
 
 ```bash
 cd ~/git/a7c2/Sony-PMCA-RE
-sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/probe_service_level.py
+sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/survey_readonly.py
 ```
+
+権限レベルだけを測りたいときは `scripts/probe_service_level.py`。
 
 ## 含めないもの
 

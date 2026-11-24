@@ -59,10 +59,19 @@ Jiritsu の読み取り（レベル A が前提）か、シェルが取れた後
 - [ ] `/etc/passwd` の中身（`files` が効くなら NSS 改変が不要になりうる）
 - [ ] `/setting/ulogio.bin` の現物（A の最後の項目と同じ）
 
-## C. 親子接続が PP クラスで有効かを判定する【PC のみ】
+## C. 親子接続が PP クラスで有効か【静的には確定不能・2026-11-24】
 
-- [ ] feature manager 側に親子接続 / SSH の可否フラグがあるか再確認する
-- [ ] `X_SSH_Support` を出す条件（`appFw.so` の機器記述生成箇所）を読む
+- [x] feature manager を全数確認した。`PRM_FEATURE_MANAGER_*` は**39件だけ**で、
+      親子接続・SSH・ネットワーク同期に当たる項目は**無い**。
+      （あるのは `camera_parameters` / `imager_model` / `support_cfexpress` /
+      `menu_item` など。ゲートはここではない）
+- [x] `appFw.so` の機器記述は `<X_SSH_Support> </X_SSH_Support>` が**空のテンプレート**で、
+      `Enable` / `Disable` が実行時に入る。静的には値が決まらない
+- [x] infra 層に `[REQCONS-2864] [infra_wrapper_remote_parentchild] InfraRemoteParentChild not supported`
+      という経路がある。つまり対応判定はここで、95MB の `appFw.so` を
+      追う必要がある（費用対効果が悪い）
+- [ ] **実機で観測するほうが安い。** Wi-Fi 接続時の機器記述（SCPD）を取得して
+      `X_SSH_Support` の値を見る、またはメニューに親子接続の項目があるかを見る
 
 ## D. Jiritsu の読み取りプローブを実機で通す【実機・読み取りのみ】
 
