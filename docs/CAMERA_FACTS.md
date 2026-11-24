@@ -8,6 +8,87 @@
 `scripts/survey_readonly.py` の1回の読み取りで判明したもの。
 **カメラには何も書き込んでいない。**
 
+## 実行環境（jit_probe、2026-11-24）
+
+読み取り専用ライブラリの報告から確定した事実。
+
+### 我々のコードが走る場所
+
+| 項目 | 値 |
+| --- | --- |
+| プロセス | **`/usr/bin/im.elf debug s g r u l i a lazy-global`**（pid 532、親 pid 1） |
+| 権限 | `Uid: 0 0 0 0` / `Gid: 0 0 0 0` ＝ **完全な root** |
+| ケーパビリティ | `CapEff: 0000003fffffffff` ＝ **全ケーパビリティ** |
+| スレッド数 | 215 |
+| RSS | 3.8 GB（カメラ本体アプリそのもの） |
+| カーネル | `Linux 4.9.337-scel+ #1 SMP PREEMPT Sat Oct 11 04:09:59 JST 2025 aarch64` |
+
+**サービスプロトコルの処理も、撮影アプリも、この同じプロセス。**
+つまり我々のライブラリは `libsencore.so` と同じアドレス空間にいる。
+
+### マウント（`/proc/mounts` 実測）
+
+| マウント先 | 実体 | 種別 | 読み書き |
+| --- | --- | --- | --- |
+| `/` | `/dev/nflasha7` | ext2 | **ro** |
+| `/usr` | `/dev/nflasha15` | ext2 | **ro** |
+| `/tmp` | `/dev/nflasha10` | vfat | **rw** |
+| **`/etc`** | **`/dev/nflasha10`** | **vfat** | **rw** |
+| `/var` | `/dev/nflasha10` | vfat | rw |
+| `/setting` | `/dev/nflasha2` | vfat | rw |
+| `/system` | `/dev/nflasha3` | vfat | rw |
+| `/cp` | `/dev/nflasha8` | vfat | rw |
+| `/log` | `/dev/nflasha11` | vfat | rw |
+| `/cert` | `/dev/nflasha12` | vfat | rw |
+| `/lens` | `/dev/nflasha18` | vfat | rw |
+| `/tmp/jiritsu` | `/dev/nflasha6` | vfat | rw |
+| `/usr/data/lut` | `/dev/nflasha30` | vfat | **rw** |
+| `/usr/data/ai_dict/usr` | `/dev/nflasha22` | vfat | rw |
+| **`/tmp_wbshd`** | none | **tmpfs** | rw |
+| **`/tmp_network`** | none | **tmpfs**（size=1024k） | rw |
+| `/tmp_ipsec` / `/tmp_cloud` / `/tmp_bt` | none | tmpfs | rw |
+
+- **`/etc` が書き込み可能であることが実機で確認できた。**
+- **`/tmp_network` は tmpfs。** sshd のホスト鍵と `ssh_name_password` の
+  置き場がここなので、[ON_MEMORY.md](ON_MEMORY.md) のオンメモリ SSH 設計は成立する。
+- `/usr/data/lut` という**書き込み可能な LUT パーティション**がある（nflasha30）。
+
+### シェルは実在する（前の未確認項目）
+
+`/bin/sh`、`/bin/ash`、`/bin/busybox` がいずれも **423,000 バイト**で、
+`sh` と `ash` は busybox へのシンボリックリンク。
+**`/etc/passwd` のシェルを `/bin/sh` にすれば実在する。**
+[SSH.md](SSH.md) 3章の NSS バイトパッチが不要という結論と合わせて、
+**root SSH に必要なのは `/etc` の2ファイルの編集だけ**という見通しが固まった。
+
+### SSH の現状
+
+| 項目 | 実測 |
+| --- | --- |
+| `/etc/ssh` の中身 | **`sshd_config` だけ。ホスト鍵は置かれていない**（`/tmp_network` 側に生成される） |
+| `/etc/shadow` | **存在しない** |
+| `/etc/passwd` | 124 バイト（root は `*`、シェル `/bin/false`） |
+| `sshd` プロセス | **走っていない** |
+
+`shadow` が無いので、パスワード認証を使うなら `/etc/passwd` の第2欄に
+ハッシュを入れる形になる。鍵認証のほうが素直。
+
+### 走っているプロセスは5つだけ
+
+```text
+1     /bin/busybox sh /sbin/init2
+518   /usr/bin/bootin.elf
+528   /bin/ash --                     ← setup_console が回しているコンソールシェル
+532   /usr/bin/im.elf ...             ← 我々のコードが走っている場所
+1520  /usr/bin/bsa_server ...         （Bluetooth）
+```
+
+**pid 528 の `/bin/ash --` が待機している。** これが
+[TERMINAL_GATE.md](TERMINAL_GATE.md) で追っていた「コンソールのシェル」で、
+端末を開けば繋がる相手。
+
+`/tmp/jbusy` と `/tmp/jmode` はいずれも存在しない。
+
 ## サービス権限レベルは A
 
 | 問い | 結果 |
