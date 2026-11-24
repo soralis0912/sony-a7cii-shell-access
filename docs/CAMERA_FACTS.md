@@ -562,8 +562,49 @@ On the macOS side the matching check is the IORegistry, not `system_profiler`
     ioreg -c IOUSBHostDevice -r -w 0 | grep -E '\+-o '
 
 Zero `IOUSBHostDevice` nodes while `usb-drd0`, `usb-drd1`, `port-usb-c-1` and
-`port-usb-c-2` are all present means the controllers are healthy and nothing is
-plugged in. `ioreg -l` emitted 4.8 MB, so ioreg itself was working.
+`port-usb-c-2` are all present means the controllers are healthy and the host
+never enumerated anything. `ioreg -l` emitted 4.8 MB, so ioreg itself was
+working.
+
+`not attached` does **not** mean the cable is out. Polling while the cable was
+unplugged and replugged twice showed the UDC state never moving off
+`not attached`, while `/proc/usb_otg` toggled its third byte on each insertion
+and then gave up:
+
+    [5676.35] not attached | speed=UNKNOWN | max=full-speed | otg=03 02 01 00
+    [5701.63] not attached | speed=UNKNOWN | max=full-speed | otg=03 02 02 00
+    [5703.24] not attached | speed=UNKNOWN | max=full-speed | otg=03 02 01 00
+    [5722.90] not attached | speed=UNKNOWN | max=full-speed | otg=03 02 02 00
+    [5727.07] not attached | speed=UNKNOWN | max=full-speed | otg=03 02 01 00
+
+So byte 3 of `/proc/usb_otg` is the insertion flag: 01 idle, 02 while a cable
+is seen. The camera's own UI said "check the connected device" at the same
+time. The Type-C layer notices the cable; nothing brings the gadget up.
+
+The kernel logged nothing at all for those events - `dmesg | grep -cE
+'\[ *5[0-9]{3}\.'` returned 0 against an uptime of 5905 s. Every retained boot
+starts the gadget exactly once, at about 2 s, and the registration fails
+immediately:
+
+    [    2.494145] fusb_try_start_gadget gadget started
+    [    2.494943] usbg_buspower: ioctl_probe(): Failed to
+                   usb_gadgetcore_register_driver(). error code is -22.
+
+One retained boot has the gadget working normally later (cycles at 788-1209 s),
+so that `-22` is not on its own proof of a wedged controller.
+
+Nothing is missing on the function side; all of it is loaded:
+
+    usbg_storage  usbg_stillimage  usb_f_uvc  usb_f_uac2  libcomposite
+
+`/sys/class/udc/f10c0000.usb/device/gadget` exists and the dwc3 driver has
+`bind`/`unbind`. There is no configfs gadget tree.
+
+Two candidates remain, in the order worth testing, because each costs the
+telnet session but not the flash contents:
+
+1. the camera's network state gates USB - Wi-Fi was up on wlan0 throughout
+2. the gadget core is wedged for this boot - only a power cycle clears it
 
 ### `mode error` accompanies role switching; it does not mark a failure
 
