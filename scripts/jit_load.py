@@ -75,9 +75,17 @@ MARKER = "/tmp/jiritsu/jit_hello.txt"
 JITLOG = "/tmp/jiritsu/jit.log"
 LIMIT = 25 * 1024 * 1024   # the handler refuses once /tmp/jiritsu/* passes this
 
-ERRORS = {8: "open failed", 9: "write failed", 15: "over the 25 MiB limit",
+# the handlers return (code | 0x10000000), so mask the low bits before lookup
+ERRORS = {4: "mount of /dev/nflasha6 failed",
+          6: "file does not exist (the read handler's stat failed)",
+          8: "open failed", 9: "write failed", 15: "over the 25 MiB limit",
           17: "/tmp/jbusy exists - the service is mid-operation",
           21: "dmm allocation failed", 513: "bad parameter"}
+
+
+def code_of(status: int) -> int:
+    """Strip the 0x10000000 flag the handlers OR into their error codes."""
+    return status & 0xFFFF if status & 0x10000000 else status
 JIT_ERRORS = {11: "ramdisk mount failed", 16: "CreateScriptI returned 0",
               18: "dlopen failed", 19: "LoadScriptI missing",
               20: "CreateScriptI missing", 21: "copy to the ramdisk failed"}
@@ -129,10 +137,11 @@ def show(label: str, response: bytes) -> int | None:
     if len(response) < 4:
         return None
     status = int.from_bytes(response[:4], "little")
-    meaning = ERRORS.get(status, "")
-    print("      status 0x%08x (%d)%s" % (status, status,
-                                          "  " + meaning if meaning else
-                                          ("  ok" if status == 0 else "")))
+    code = code_of(status)
+    meaning = ERRORS.get(code, "")
+    print("      status 0x%08x -> code %d%s"
+          % (status, code, "  " + meaning if meaning else
+             ("  ok" if status == 0 else "  (unknown code)")))
     body = response[4:]
     if body:
         text = "".join(chr(c) if 32 <= c < 127 else "." for c in body[:600])
@@ -172,8 +181,13 @@ def list_area(camera):
                 continue
             status = int.from_bytes(response[:4], "little") if len(response) >= 4 else None
             size = max(0, len(response) - 4)
-            note = "exists, %d bytes" % size if status == 0 and size else (
-                "status 0x%08x" % status if status else "status 0, empty")
+            if status == 0 and size:
+                note = "exists, %d bytes" % size
+            elif status:
+                code = code_of(status)
+                note = "code %d: %s" % (code, ERRORS.get(code, "unknown"))
+            else:
+                note = "status 0, empty"
             print("   [%d] %-28s %-8s %s" % (idx, path, how, note))
             if status == 0 and size:
                 break
