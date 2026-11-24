@@ -21,3 +21,4 @@ __pycache__/
 id_*
 authorized_keys
 backup*.bin
+*.cube

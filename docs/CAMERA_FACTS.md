@@ -518,3 +518,25 @@ python3 scripts/ulogio_filter_file.py --edit <取得した ulogio.bin> --telnet 
 2. **telnet は `/setting/ulogio.bin` の 1 バイトで足りる。** ただし不揮発。
 3. どちらも**書き込み手段が必要**。レベル A なら `shell` が最も安全
    （書き込みゼロでまず中を見られる）。Jiritsu の `SET_FILE` はまだ未検証。
+
+## busybox applets without symlinks (2026-11-25)
+
+`busybox --list` reports 130 applets. `/bin` has symlinks for only a subset, so
+these are all present and all fail when called bare — use `busybox <applet>`:
+
+    md5sum  wc  xxd  tail  head  df  id  fuser  stty  dd  gzip  gunzip
+    sha1sum  tar  sed  cut  sort  nl  paste  xargs  hexedit  ftpget  ftpput
+
+Absent from the list entirely, so unavailable under any name: `tr`, `nc`,
+`wget`, `base64`, `awk`, `find`, `which`, `du`, `free`, `top`, `chroot`'s
+usual companions. `base32` is present; `base64` is not.
+
+No `nc` means no netcat listener for file transfer. The route that works is
+streaming ASCII straight into `cat >` through the telnetd pty — see
+[LUT.md](LUT.md).
+
+## `/usr/data/lut` is its own read-write partition (2026-11-25)
+
+    /dev/nflasha30 on /usr/data/lut type vfat (rw,dirsync,noatime,...)
+
+A 970 KB file written there survives as a normal file with normal permissions.
