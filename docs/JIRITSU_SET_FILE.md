@@ -1,4 +1,42 @@
-# Jiritsu `SET_FILE`：ネイティブコード実行の経路（2026-11-24、静的解析）
+# Jiritsu `SET_FILE`：ネイティブコード実行の経路
+
+> **実機で成立（2026-11-24）。** 普通の USB ケーブル経由で、サービスプロセス内で
+> **uid 0 / euid 0** として任意のネイティブコードが実行された。
+
+## 実機での結果（2026-11-24）
+
+`scripts/jit_load.py` で、自前ビルドの `libJit.so`（3,328 バイト、libc 非依存、
+SHA-256 `40f2745f…ed46`）を番号2・モード0 で送った結果：
+
+```text
+SET_FILE returned 4 byte(s): 00000000          ← ステータス 0 ＝ 書き込み成功
+
+/tmp/jiritsu/jit_hello.txt  35 バイト
+   libJit loaded
+   pid=532 uid=0 euid=0
+```
+
+- **コンストラクタが走った。** `/tmp/jiritsu/jit_hello.txt` は我々のコードが
+  `openat`/`write`/`close` で作ったもので、読み戻せた。
+- **権限は root。** `uid=0 euid=0`。pid 532 のプロセス内。
+- `/tmp/jiritsu/jit.log` は**存在しない**（コード 6）。つまり読み込みを
+  やったのは `jit_thread` の ramdisk 経路ではなく、
+  **`adj_cmd_set_file` が書き込み直後に行う `dlopen`**（`0x9260`）。
+  こちらは `/tmp/jiritsu/libJit.so` を**直接** `dlopen` し、
+  ログは内部ログ（`jiritsu_cpp_logrec`）に出るのでファイルには残らない。
+  `CreateScriptI` / `LoadScriptI` / `RunScriptI` を必要とするのは
+  `jit_thread` 側だけなので、**この経路ではコンストラクタだけで足りる**
+  （3シンボルを入れておくことに害はない）。
+
+### 今カメラに残っているもの
+
+`/tmp/jiritsu/libJit.so`（3,328 バイト、`/dev/nflasha6` 上、vfat）と
+`/tmp/jiritsu/jit_hello.txt`（35 バイト）。
+**どちらも不揮発**で、消すには `FILE_DELETE`（`0x4009`、書き込み系）か
+別の手段が必要。ファームウェア・バックアップ・`/etc`・`/setting` は
+一切触っていない。`dlopen` されたイメージは電源を切れば消える。
+
+## 元の静的解析（2026-11-24）
 
 USB 端末が死んでいる（[CAMERA_FACTS.md](CAMERA_FACTS.md)）一方で、
 **こちらは実機で通っている輸送路の上にある**。Jiritsu のカテゴリ `0x1001` は

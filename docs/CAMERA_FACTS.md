@@ -1,5 +1,10 @@
 # 実機から取れた事実（ILCE-7CM2、2026-11-24）
 
+> **ネイティブコード実行が成立した。** Jiritsu `SET_FILE` で自前の
+> `libJit.so` を送ると、サービスプロセス（pid 532）が `dlopen` し、
+> コンストラクタが **uid 0 / euid 0** で走った。
+> 詳細： [JIRITSU_SET_FILE.md](JIRITSU_SET_FILE.md)。
+
 `scripts/survey_readonly.py` の1回の読み取りで判明したもの。
 **カメラには何も書き込んでいない。**
 
