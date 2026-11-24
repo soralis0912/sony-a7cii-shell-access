@@ -21,7 +21,15 @@ Sony **ILCE-7CM2**（A7C II）Ver. **2.01** で root シェル（SSH / Telnet / 
 - 次にやること： [TODO.md](TODO.md)
 - 参照元と帰属： [REFERENCES.md](REFERENCES.md)
 
-## 到達点（2026-11-24）
+## 到達点
+
+> **ネットワーク越しの対話 root シェルに入れた（2026-11-25）。**
+> `busybox telnetd -l /bin/sh` をコマンドチャネルから起動し、
+> `nc <IP> 2323` で接続。`/etc`・`/setting`・バックアップ・ファームウェアは未変更で、
+> 止めれば（または電源を切れば）何も残らない。
+> 経緯： [docs/CAMERA_FACTS.md](docs/CAMERA_FACTS.md)。
+
+### そこまでの道筋（2026-11-24）
 
 **普通の USB ケーブル経由で、カメラ上で任意のシェルコマンドを root 実行し、
 出力を読み戻せる。** 経路は Jiritsu の `SET_FILE`（カテゴリ `0x1001` /
