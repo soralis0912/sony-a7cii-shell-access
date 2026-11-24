@@ -142,7 +142,95 @@ nc <カメラの IP> 2323
   短時間で終わらせて止める。長時間使うならカメラを AP モードにして
   クライアントだけをそちらに繋ぐ
 
-### ネットワークは USB モード中は死んでいる（2026-11-24 実測）
+### 端末が死んでいた理由：`console=ttynull0`（2026-11-25 確定）
+
+`/proc/cmdline` にこうある：
+
+```text
+console=ttynull0
+```
+
+**コンソールが null デバイスに向いている。** p3 initrd の `setup_console` は
+`console=` を見て `getty` を立てるが、その先が `ttynull0` なので
+出力は捨てられ、入力は永久に来ない。`init2` が回している `ash --login` も
+同じ。つまり
+
+- `terminal_change_function_is_disabled` でもなく
+- コマンド表のフラグ `0x80` でもなく（どちらも実機では 0 だった）
+- **そもそもコンソールの行き先が無い**
+
+のが、`shell` が無反応だった理由。
+A7 IV 側で ULOGIO の移植が必要だったのも、同じ事情と見られる。
+
+なお `dmesg` に `[usbter usbg_ldisc_start]` / `usbg_ldisc_stop` が出ており、
+USB 側には端末のライン・ディシプリンが存在する（USB 接続のたびに
+start/stop している）。`console=` をこちらに向ける経路があるなら
+端末は生きるが、カーネル引数は不揮発の書き換えが要る。
+
+### カーネル引数から読めるメモリ配置
+
+オープンゲートで CP 側の RAM を触るときに必要になるので控えておく：
+
+```text
+mem=4G
+memrsv=0x00C00000@0x404000000      memrsv=0x00400000@0x404C00000:uc
+memrsv=0x01000000@0x405000000      memrsv=0x00200000@0x410000000
+memrsv=0x0BE00000@0x410200000:uc   memrsv=0x02000000@0x422000000
+memrsv=0x0C400000@0x424000000      memrsv=0xCFC00000@0x430400000:uc
+klog.addr=0x400040000 klog.size=0x40000
+initrd=0x408000000,0x1000000  root=/dev/ram0 rootfstype=ext2
+wdt.timeout=500 wdt.mode=1         ← ウォッチドッグが生きている
+coredump.coremode=1  exception.stop=1  cfg.uart=1
+```
+
+CPU は **Cortex-A53（`CPU part 0xd04`）× 4**、ARMv8、
+`aes pmull sha1 sha2 crc32`。
+
+### `/setting` の中身（2026-11-25）
+
+| ファイル | サイズ | 意味 |
+| --- | --- | --- |
+| **`Backup.bin`** | **2,390,264** | **BK4 バックアップそのもの。** PMCA で読み出したものと同サイズ |
+| `Backup.bak` | 2,390,264 | その控え（mode 777） |
+| `ulogio.bin` | 2,900 | ulogio の初期化ファイル（既出） |
+| `cxd90057.dtb` | 16,875 | デバイスツリー |
+| `psd.bin` | 4,427,776 | |
+| `defdet.bin` | 5,242,880 | 欠陥画素情報と見られる |
+| `facedmy.bin` | 51,200 | |
+| `DmmCfg.bin` | 65,956 | メモリマネージャ設定 |
+| **`development.txt`** | **0** | **存在するだけのファイル。** 何を切り替えるのか未調査 |
+| `.hasp` | 88 | |
+| `.etools` | 4,096 | |
+| `mode/` `gps/` `updater/` `appfw_infra/` | — | `mode/` に `dmode` |
+
+`/setting/sen/smode` は**存在しない**（`setup_senser` が `sen.elf` を
+起動しない条件と整合）。
+
+> **`Backup.bin` は読むだけにする。** 2.4 MB の BK4 本体で、
+> チェックサムと全設定・調整値が入っている。シェルから書き換えるのは
+> `bk w` 以上に危険。
+
+### `/usr/data/lut` は書き込み可能で `.cube` が置かれている
+
+```text
+-rwxr-xr-x 1 root 0  970355  S709.cube
+-rwxr-xr-x 1 root 0  970360  S709C.cube
+-rwxr-xr-x 1 root 0  970314  r709.cube
+-rwxr-xr-x 1 root 0  970314  r709C.cube
+```
+
+nflasha30 が `rw` でマウントされていて、**カスタム LUT は
+`.cube` をここに置くだけで届く可能性が高い**。
+サイズが揃っているので固定長フォーマットと見られる（要確認）。
+
+`/log` には `AccessLog.dat` / `.bak`（各 2 MB）。
+
+### ネットワークは USB モード中は死んでいる（2026-11-24 実測、翌日に訂正）
+
+> **訂正：Wi-Fi を有効にすればサービスモード中も生きる。**
+> 2026-11-25 に `wlan0` が `192.168.20.106` で上がったまま、
+> USB のチャネルと同時に使えることを確認した。
+> 下記は「USB モードに入れた直後、Wi-Fi 未接続のとき」の状態。
 
 `/sys/class/net` にあるのは **`lo` / `gre0` / `gretap0` / `tunl0` の4つだけ**。
 `wlan0` は**存在しない**（Wi-Fi ドライバが読み込まれていない）。
