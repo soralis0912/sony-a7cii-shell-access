@@ -685,3 +685,28 @@ No `/etc/init.d`, no `/etc/rc*`, no `/etc/inittab`. The root filesystem is
 read-only ext2, so making telnetd survive a power cycle would mean writing to
 the rootfs partition itself, not dropping a script somewhere writable. That is
 a firmware-partition modification, not a configuration change.
+
+## The wedged USB gadget cleared on a power cycle (2026-11-25)
+
+After a reboot the host enumerated the camera immediately:
+
+    +-o ILCE-7CM2@00100000
+    |   "USB Vendor Name" = "Sony"
+    |   "USB Product Name" = "ILCE-7CM2"
+    |   "idVendor"  = 1356     (0x054c)
+    |   "idProduct" = 3722     (0x0e8a)
+
+and it came up in mass storage - `IOUSBMassStorageDriver`, two
+`IOSCSILogicalUnitNub`s and two `Sony DSC Media` volumes: the 67 MB `PMHOME`
+partition and the memory card itself, exFAT, writable.
+
+So nothing was broken. The gadget had been left stopped for that boot, most
+likely by the earlier service-mode session - the log's `ioctl_stop:
+usb_gcw_unregister_driver() ON_DEMAND` and `[usbter usbg_ldisc_stop]` lines are
+the app tearing it down on purpose, and nothing ever asked it to start again.
+Insertion was still detected the whole time (`/proc/usb_otg` byte 3 toggling),
+which is why the camera kept saying to check the connected device.
+
+Worth remembering: a service-mode session can leave USB dead until the camera
+is power-cycled, and no amount of replugging or turning Wi-Fi off will bring it
+back.

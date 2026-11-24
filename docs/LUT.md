@@ -132,7 +132,20 @@ it is what writes the backup properties the slots depend on:
     BKID_APP_USER_LUT_ATTR_OUTPUT_PROCAM<n>
     BKID_APP_USER_LUT_ATTR_AE_LEVEL_OFFSET<n>
 
-On a FAT card the path is `PRIVATE/SONY/PRO/LUT`. Other strings in the same
+That firmware string is an **app-internal virtual path**, not a path on the
+card and not a path in the camera's Linux namespace. The real directory, which
+the camera creates for itself, is the Professional media one:
+
+    PRIVATE/M4ROOT/GENERAL/LUT
+
+Mounted over mass storage on macOS that is
+`/Volumes/<card>/PRIVATE/M4ROOT/GENERAL/LUT`, and it starts out empty - which
+is exactly what the camera means by "no files" on the import screen.
+
+Copying a `.cube` there with the Finder or `cp` leaves an AppleDouble
+`._<name>.cube` beside it. Delete those before handing the card back, so the
+camera's import list is not reading macOS metadata as a LUT, and eject the
+volume so the exFAT is flushed. Other strings in the same
 area - `CUBE_FILE_OPERATION_DESTINATION_MEDIA`, `..._CLOUD_PRIVATE`,
 `..._CLOUD_SHARE`, `EVENT_REMOTE_CUBE_FILE_CLOUD_DOWNLOAD_LIST` - show the
 import can also come from Creators' Cloud.
