@@ -171,3 +171,26 @@ cp /usr/data/lut/r709C.cube /usr/data/lut/r709C.cube.orig
 
 `native/jit/jit_lut.c` generates the LUT on the camera instead, for when only
 the Jiritsu path is available and there is no shell to stream through.
+
+## The 50 slots, and what to read after an import
+
+Each user-LUT slot is five backup properties. Addresses from the
+feature-research repository's BKID inventory for firmware 2.01, each family
+being 50 consecutive ids:
+
+| family | slot 0 | firmware default |
+| --- | --- | --- |
+| `IS_EXIST_USER_LUT<n>` | `0x02cf105c` | `00` (EMPTY) |
+| `USER_LUT_FILE_ID<n>` | `0x02cf106c` | 64 zero bytes |
+| `USER_LUT_ATTR_INPUT_GAMUT<n>` | `0x02cf107c` | `01` |
+| `USER_LUT_ATTR_OUTPUT_PROCAM<n>` | `0x02cf1450` | `00` |
+| `USER_LUT_ATTR_AE_LEVEL_OFFSET<n>` | `0x02cf104c` | `00` |
+
+`FILE_ID` being a 64-byte field rather than a number is the interesting part -
+that is the right shape for the name the menu shows.
+
+`scripts/read_user_lut_slots.py` reads all 250 properties and prints the slots
+that differ from those defaults. Import a LUT through the camera's own menu
+first; whatever it changed is the registration recipe, and that is what a slot
+would need to be given for a LUT written straight into `/usr/data/lut` to
+appear. `LUT001.cube` is already sitting there for that test.
