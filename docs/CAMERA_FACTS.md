@@ -61,6 +61,33 @@
 [SSH.md](SSH.md) 3章の NSS バイトパッチが不要という結論と合わせて、
 **root SSH に必要なのは `/etc` の2ファイルの編集だけ**という見通しが固まった。
 
+### SSH の材料は既に用意されている（2026-11-24、シェル経由で確認）
+
+`/tmp_network/ssh`（tmpfs）の中身：
+
+```text
+drw-r-xr-x  2 root 0  120 Jan  1 00:53 .
+-rw-r--r--  1 root 0    1 ssh_auth_failed_count
+-rw-------  1 root 0  505 ssh_host_ecdsa_key      ← ホスト秘密鍵、mode 0600
+-rw-r--r--  1 root 0   82 ssh_name_password       ← アカウント定義
+-rw-r--r--  1 root 0    1 ssh_session_count
+```
+
+**ホスト鍵が生成済み**で、サイズ 505 バイトは
+バックアッププロパティ `0x03000000`（600 バイト枠、非ゼロ 505 バイト）と一致する。
+つまり `createKeyFromBackup` が起動時に走り、鍵が配置されている。
+`ssh_name_password`（82 バイト）も存在する——`libnss_ssh.so.2` が読む
+`name,x` 形式のアカウント定義ファイル。
+
+**sshd は走っていないが、材料は揃っている。**
+
+### busybox は applet が削られている
+
+`/bin/sh` は busybox だが、**`tr` / `head` / `df` / `id` は入っていない**。
+`ls` / `cat` / `echo` / `ps` / `uname` / `grep` / `sed` などは使える
+（`/bin` の一覧は [FIELD_SESSION.md](FIELD_SESSION.md) 側の記録参照）。
+`/etc` を編集する方法を決めるには `busybox --list` を見る必要がある。
+
 ### SSH の現状
 
 | 項目 | 実測 |
