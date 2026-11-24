@@ -148,12 +148,19 @@ p15 改変が必要だと分かった場合のみ、F まで到達し、かつ�
 - [ ] 書き込み後は**独立した完全回読**を行ってから起動する
 - [ ] 復旧手段（改変前の自機 p15）を必ず手元に残す
 
-## I. SSH を通す【実機・書き込みが必要】
+## I. Jiritsu `SET_FILE` でコードを走らせる【本線】
 
-USB 端末が死んでいるので、**シェル無しで `/etc` を書く**のが本線になった。
+引数形式と経路は特定済み（[docs/JIRITSU_SET_FILE.md](docs/JIRITSU_SET_FILE.md)）。
+**`libJit.so` を書くとサービスが `dlopen` する。** 任意パスへの書き込みは
+できないので、`/etc` はそのコードの中から書く。
 
-- [ ] Jiritsu `SET_FILE`（`0x4007`）/ `SET_FILE2`（`0x4010`）の引数形式を
-      `libsencore.so` / `libJiritsu.so` から特定する【PC のみ】
+- [x] `SET_FILE`（`0x4007`）の引数形式を特定（ヘッダ3バイト：
+      `00` / ファイル番号 / モード、以降が中身）
+- [x] ファイル番号の表を特定（**2 = `/tmp/jiritsu/libJit.so`**）
+- [x] 前提を特定（`/tmp/jbusy` が無いこと、合計 25 MiB 未満、p6 を vfat で自動マウント）
+- [ ] `unk_47AD8` の34件の表を展開し、残りのファイル名を確認する【PC のみ】
+- [ ] 最小の `libJit.so` を作る（aarch64、コンストラクタで1ファイル書くだけ）【PC のみ】
+- [ ] 実機で送って戻り値を確認し、`GET_FILE2` で痕跡を読み戻す【実機】
 - [ ] 揮発領域（`/tmp_wbshd`）に小さなファイルを書き、`GET_FILE2` で
       読み戻して一致を確認する【実機】
 - [ ] 通れば `/etc/ssh/sshd_config`（`PermitRootLogin` / `PubkeyAuthentication` /
