@@ -1,0 +1,23 @@
+# never commit camera- or firmware-derived data
+*.bin
+*.dat
+*.DAT
+*.img
+*.tar
+*.so
+*.elf
+*_unpacked/
+unpacked/
+local/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# keys and camera backups must stay outside this repository
+*.pem
+*.key
+id_*
+authorized_keys
+backup*.bin

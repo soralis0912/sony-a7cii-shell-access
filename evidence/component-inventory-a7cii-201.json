@@ -1,0 +1,141 @@
+{
+  "components": {
+    "bin/bootin.elf": {
+      "a7iv_602_sha256": "82894d65312d1d854706589d369cbfc29d662895594d8c5b1755ad8cc9208390",
+      "identical_to_a7iv_602": false,
+      "present": true,
+      "role": "boot-time launcher, hook target for starting sshd",
+      "sha256": "dab3ce4b6c28a6c9ffd9f0b893dce1d08f3ee7302a09df87e518409e728be2f2",
+      "size": 23960
+    },
+    "bin/create_host_key.sh": {
+      "present": true,
+      "role": "Sony wrapper that makes the ECDSA host key",
+      "sha256": "4da1bf84e9e4256957607c8341a335c5ff8f6eb23de776c0a449c9a21f50f1da",
+      "size": 302
+    },
+    "bin/get_finger_print.sh": {
+      "present": true,
+      "role": "Sony wrapper that prints the host key fingerprint",
+      "sha256": "845f5d3c5d6827e9719321d0898e8199aeae4f6979922f1da8b45d0b8c1e0ff8",
+      "size": 168
+    },
+    "bin/ssh-keygen": {
+      "present": true,
+      "role": "host key generator",
+      "sha256": "c3aaf1e24721fa78308c7daadca29de29e6d3c384e632754422f155054373fa9",
+      "size": 416976
+    },
+    "bin/ssh_account_lock_recorder": {
+      "present": true,
+      "role": "account lockout recorder",
+      "sha256": "777f99f27dc1f321c9871a884710968b8141dc9d5c8de72143df85c60aa6cbf4",
+      "size": 101552
+    },
+    "bin/ssh_session_monitoring": {
+      "present": true,
+      "role": "session watchdog",
+      "sha256": "55ce9af25325a5df1533ce7872a385c3de8bcc6e851c1e36187fe5bfb95607af",
+      "size": 101296
+    },
+    "bin/ulogio": {
+      "present": true,
+      "role": "ulogio CLI (telnet up/down, term on/off)",
+      "sha256": "178597b661b2d8df4058fdf94a3059c8bae978621ce461dcbde2a3a6b934acfc",
+      "size": 101880
+    },
+    "bin/ulogio.elf": {
+      "present": true,
+      "role": "ulogio CLI helper",
+      "sha256": "974d9a5b4321c1f66639a52c7e28ba4d6fb1f6a78bf4c91dff31e6478b5937c2",
+      "size": 28656
+    },
+    "kmod/osal_ulogio.ko": {
+      "present": true,
+      "role": "ulogio kernel module",
+      "sha256": "f1db304af8fd7c6a208880cc40edd11218a94f02d3b10ddd81aea9a8aa103852",
+      "size": 68528
+    },
+    "lib/libInfraSSHManager.so": {
+      "markers": {
+        "/tmp_network/ssh/ssh_name_password": true,
+        "/usr/sbin/sshd": true,
+        "SSHD_START_CMD": true,
+        "createKeyFromBackup": true
+      },
+      "present": true,
+      "role": "sshd lifecycle / host key in backup",
+      "sha256": "af2ebe521504e5ce9cb47b46ff2c43aaf77d8ddb21514392d83afb327645ecda",
+      "size": 60360
+    },
+    "lib/libJiritsu.so": {
+      "present": true,
+      "role": "Jiritsu service commands",
+      "sha256": "87dc24912938be8dd59965e62306e79fdd8c672e10ed6f9734c88454b1d144a8",
+      "size": 233416
+    },
+    "lib/libnss_ssh.so.2": {
+      "a7iv_602_sha256": "21c29cad2acc9af2183f81512a2ebdbc729bbf643fc41fd0cd28635944f051e4",
+      "identical_to_a7iv_602": true,
+      "markers": {
+        "/bin/false": true,
+        "/tmp_network/ssh/ssh_name_password": true
+      },
+      "present": true,
+      "role": "NSS module that invents the login account",
+      "sha256": "21c29cad2acc9af2183f81512a2ebdbc729bbf643fc41fd0cd28635944f051e4",
+      "size": 10192
+    },
+    "lib/libosal_ulogio.so": {
+      "a7iv_602_sha256": "b31f6e90f37841ab0249a36cc4b3224610f77ae8bc2b9995f9268c2c0131f474",
+      "identical_to_a7iv_602": false,
+      "markers": {
+        "ulogio_filter_get_telnet": true,
+        "ulogio_filter_set_telnet": true,
+        "ulogio_telnetd_init": true,
+        "ulogio_telnetd_mainloop": true
+      },
+      "present": true,
+      "role": "ulogio: telnetd + log filter",
+      "sha256": "ce8ecde7e4826cad86edf2000e3330c6234dbdf127474751ecb61305abfc2497",
+      "size": 40168
+    },
+    "lib/libsencore.so": {
+      "a7iv_602_sha256": "f58b97548062b8c5ab819f109e7cd64b57b1724e7885ca066358a0dc4849f742",
+      "identical_to_a7iv_602": false,
+      "markers": {
+        "@JIRITSU_FILE_DELETE": true,
+        "@JIRITSU_FIRMUP": true,
+        "@JIRITSU_GET_FILE2": true,
+        "@JIRITSU_MOUNT": true,
+        "@JIRITSU_SET_FILE": true,
+        "@JIRITSU_SET_FILE2": true,
+        "@JIRITSU_SET_FILE_PATH": true,
+        "dlopen": true
+      },
+      "present": true,
+      "role": "Sony service core (Senser/Jiritsu dispatch, dlopen)",
+      "sha256": "3362d4b6e03dc517b04f1eb04d4199ff16d33f6e8f1bfddce657a375778d79e7",
+      "size": 385520
+    },
+    "lib/libssh2.so.1.0.1": {
+      "present": true,
+      "role": "SSH client library (parent/child feature)",
+      "sha256": "5dc7ca0687907bc6f4b7938000a934a7fa8cd8122c31950c682e5147964cee0c",
+      "size": 216784
+    },
+    "sbin/sshd": {
+      "present": true,
+      "role": "OpenSSH daemon shipped by Sony",
+      "sha256": "a6b871ef0da3990ea0d25d7996ee79c3bfc29385d4eb1670892814c0e1472534",
+      "size": 767408
+    },
+    "wifi-scripts/ulset.sh": {
+      "present": true,
+      "role": "factory ulogio filter script",
+      "sha256": "0de71d3bf024825bdbbad6816001e3b4d2fc25bfec2741ef5ac0d1d43ef207b4",
+      "size": 1594
+    }
+  },
+  "p15_root": "/Users/masayoshimatsubara/git/a7c2/fwtool.py/unpacked/firmware.tar_unpacked/0700_part_image/dev/nflasha15_unpacked"
+}
