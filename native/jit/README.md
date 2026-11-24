@@ -8,6 +8,7 @@
 | `jit_nolibc.c` | **既定。libc を一切使わず**、生のシステムコールで `/tmp/jiritsu/jit_hello.txt` に pid/uid/euid を書く。`DT_NEEDED` が無いので**カメラの glibc 版数が問題になりえない** |
 | `jit.c` | 同じことを libc で書いたもの。読みやすいが glibc 向けクロスツールチェインが必要 |
 | `jit_probe.c` | **読み取り専用の調査ライブラリ。** カメラの状態を集めて `/tmp/jiritsu/jit_report.txt` に書くだけ。設定も既存ファイルも変更しない |
+| `jit_termgate.c` | **端末ゲートを開ける。** `libsencore.so` の `.rodata` にある TERM_MODE のフラグバイトを `0x80` → `0x00` にする。`mprotect` が必要。**不揮発には書かない**（private mapping の copy-on-write なので電源を切れば戻る） |
 | `build.sh` | 使えるツールチェインを自動で選んでビルドし、`check.sh` を実行する |
 | `check.sh` | 出来たものがカメラで読めるかを検証する（ELF 種別、3シンボル、`INIT_ARRAY`、要求 glibc、未定義シンボル） |
 
@@ -100,6 +101,38 @@ sudo ./venv/bin/python ~/git/a7c2/sony-a7cii-shell-access/scripts/jit_load.py \
 ```
 
 送信後、`jit_load.py` が `jit_report.txt` を自動で読み戻す。
+
+## `jit_termgate.c` が触る1バイト
+
+| 項目 | 値 |
+| --- | --- |
+| 対象 | `libsencore.so` の TERM_MODE レコードの**フラグバイト** |
+| ランタイムアドレス | `libsencore.so のベース + 0x27833`（この库では `.rodata` の VA＝ファイルオフセット） |
+| 変更 | `0x80` → `0x00` |
+| 根拠 | A7 IV の公開パッチ（`0x26e13`、`80`→`00`）と同じフィールド |
+| 保護 | `.rodata` は ro なので `mprotect` でページを rw にし、書いてから ro に戻す |
+| 永続性 | **なし。** private file-backed mapping の copy-on-write なので、プロセスのメモリだけが変わる |
+
+**`terminal_change_function_is_disabled`（VA `0x6d9a0`、`.data`）ではない。**
+そちらはサービス権限レベルから設定される値で、この機体はレベル A なので
+既に 0（読み取り調査でゲートが開いていることも確認済み）。
+混同しないよう、`jit_termgate` はその値も読んで報告する。
+
+**書き込み前に必ず署名を照合する。** `ベース + 0x2782c` の8バイトが
+`5f 02 3d 00 01 06 1f 80`（サブシステム id・カテゴリ `0x0601`・コマンド `0x1f`・
+フラグ `0x80`）でなければ、何もせずに報告だけ出す。
+
+maps のパース処理は、同じコードをホストでネイティブにコンパイルして
+合成した `/proc/self/maps` で試験済み（正しいベースを返し、
+対象が無ければ 0 を返すことを確認）。
+
+### 当てたあとの順番
+
+1. `jit_load.py` で `libJit_termgate.so` を送る。報告に
+   `flags byte now: 0x00` が出れば成功
+2. **同じ電源サイクルのうちに** `pmca-console.py serviceshell` → `shell` を試す
+   （パッチはプロセスのメモリ上にしかないので、電源を切ると消える）
+3. 繋がれば、相手は pid 528 の `/bin/ash --`
 
 ## 実機で使うときの順番
 
