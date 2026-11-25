@@ -191,3 +191,88 @@ expects 3942. A squashed or broken 4K image would therefore be a *success*
 signal - it would prove the table is read live. An unchanged image means the
 coprocessor read the table at its own startup and a later write cannot reach
 it.
+
+## The coprocessor reads the table only at its own init
+
+The patch takes and stays, and the picture does not change. Established over
+one boot, from the shell, with no power cycle in between:
+
+- the six fields still read 8 / 4672 / 8 / 8 / 4672 / 8 well after the write
+- switching the camera into 4K movie mode does not revert them
+- nothing restores them from `/cp`
+- and the image on screen is unchanged
+
+The four other hits the scan found turned out to be transient. Re-read later
+they hold unrelated data - `25705 x 10`, zeros, `0 x 1864` - so they were
+buffers that happened to contain a copy at scan time, not stable copies. The
+only real one is at `0x41add832e`, and it stays patched.
+
+So the table is consulted when the coprocessor initialises, and a write
+afterwards cannot reach it.
+
+### `dd` is enough, and the shell beats service mode here
+
+`/dev/mem` is reachable from the shell. Page-align the seek, or `dd` will try
+to read and discard 17 GB:
+
+```
+dd if=/dev/mem bs=4096 skip=$((0x41add8000 / 4096)) count=1 | busybox xxd -p
+```
+
+This matters more than it sounds. A service-mode session leaves USB dead until
+a power cycle, and a power cycle erases the volatile patch - so inspecting the
+patch over USB is impossible by construction. Over Wi-Fi the shell outlives
+everything and the patch can be examined, re-examined and changed within one
+boot. Spend the one service-mode session on starting `telnetd`, then work over
+the network.
+
+(When parsing `xxd -p` output off a telnetd pty, keep only lines that are
+entirely hex. The shell's own prompt, `/usr/share/app # cat ...`, contributes
+`a`, `c`, `e`, `d`, `f` and `b` to a naive filter - which is how a clean page
+first came back as 4104 bytes of nonsense.)
+
+### What the coprocessor is
+
+`pci_ep_cp` is loaded, with `pcieatu`, `pcie_if`, `ldec` and `mcmn_drv`: the
+coprocessor is a **PCI endpoint**, which is what `dffe0000-dffeffff :
+0000:00:00.0` in `/proc/iomem` is. But `pci_ep_cp.ko` is 6,496 bytes with only
+`probe` and `shutdown` - a stub, not the image loader. `bootin.elf` turns out
+to be an app launcher. The only thing in the root filesystem that names
+`/image_nflasha8` is `libInfraMediaCommon.so`. No runtime interface for
+reloading or resetting the coprocessor has been found.
+
+## What is left: get there before the coprocessor does
+
+Two ways, and only one of them is currently open.
+
+**Patch `/cp/cpapp-b.bin`.** Eight bytes, at offsets already known, on a
+partition mounted rw. The coprocessor would then read the full-height table at
+its own init. It persists until restored, which is the whole point and also the
+whole risk.
+
+On verification: the update package's `part_image.sum` does record a CRC32 for
+the partition -
+
+    0,91eede9f,017f0800,...,dev/nflasha8,
+
+\- but every tool that checks it (`uc_crc32sum.elf`, `us_crc32sum.sh` and the
+rest) lives inside `bin/udtrbody.bin_unpacked`, the **updater** body, and none
+of them is in the normal root filesystem. So the CRC looks like an
+update-time check rather than a boot-time one. That is an observation, not a
+proof.
+
+What to weigh before doing it:
+
+- the 8 bytes can be restored from the shell, and re-running Sony's own 2.01
+  update rewrites the partition and the CRC with it
+- but if the coprocessor refuses to start, whether a shell or service mode can
+  still be reached depends on how much of `im.elf` comes up without it, and
+  that is unknown
+- the output-size table at `0xbefe38` is **not** part of this patch, so the
+  sensor would be read at 4672 lines while the pipeline still expects 3942.
+  Deliberately incoherent is fine for a volatile test and a poor idea for a
+  persistent one: for this route both tables should be settled first, and the
+  open-gate repository still has the readout length (2011 -> ?) open
+
+**Reset the coprocessor at runtime.** Nothing found yet. The driver is a stub
+and the loader appears to run before any of this is reachable.
