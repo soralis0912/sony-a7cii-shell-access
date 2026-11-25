@@ -158,3 +158,36 @@ happen before the coprocessor boots, which is a different problem.
 The four other copies of the signature found in ordinary kernel RAM are the
 other thing to watch: if the coprocessor can reload from one of those, patching
 only the loaded image is not enough.
+
+## The patch takes, 2026-11-25
+
+    address 0x41add832e  mode patch
+    signature matches outside the six fields
+    field values now:
+      +20 = 2      (original)
+      +24 = 3942   (original)
+      +28 = 2      (original)
+      +58 = 2      (original)
+      +62 = 3942   (original)
+      +66 = 2      (original)
+    written; reading back:
+      +20 = 8      ok
+      +24 = 4672   ok
+      +28 = 8      ok
+      +58 = 8      ok
+      +62 = 4672   ok
+      +66 = 8      ok
+
+Two things worth taking from that beyond the obvious. All six fields read as
+**original** before the write, so `0x41add832e` is the same address after a
+power cycle - the coprocessor image is loaded at a fixed reserved address, as
+`memrsv=` implies, and does not need finding again. And writing through
+`/dev/mem` to the uncached reserved region works, read-back included.
+
+What this does **not** yet say is whether the coprocessor acts on it. The
+output-size table at `cpapp-b.bin:0xbefe38` was deliberately left alone, so the
+sensor is now told to read 4672 lines while the rest of the pipeline still
+expects 3942. A squashed or broken 4K image would therefore be a *success*
+signal - it would prove the table is read live. An unchanged image means the
+coprocessor read the table at its own startup and a later write cannot reach
+it.
