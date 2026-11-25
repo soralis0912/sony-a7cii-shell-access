@@ -197,6 +197,48 @@ def list_area(camera):
     return None
 
 
+def widen_usb_timeout(camera, ms: int = 60000) -> None:
+    """Give the USB transfers room, and stop the driver swallowing the reason.
+
+    pyusb defaults to a 1 s timeout. Writing DIAC.csv returns at once, but the
+    service is then busy - it mounts /dev/nflasha6 and copies to a ramdisk - so
+    the next write, the library itself, can sit there longer than a second and
+    come back as a bare GenericUsbException(). The driver discards the
+    underlying usb.core.USBError, which is why the first failures said nothing
+    at all; this also prints it before it is thrown away.
+
+    Nothing in Sony-PMCA-RE is modified: both changes are made on the live
+    objects from here.
+    """
+    driver = getattr(getattr(camera, "dev", None), "driver", None)
+    usb_dev = getattr(driver, "dev", None)
+    if usb_dev is not None:
+        try:
+            before = usb_dev.default_timeout
+            usb_dev.default_timeout = ms
+            print("usb default_timeout %s ms -> %s ms" % (before, ms))
+        except Exception as exc:                            # noqa: BLE001
+            print("could not widen the usb timeout: %r" % exc)
+    if driver is not None and not getattr(driver, "_jit_wrapped", False):
+        for name in ("write", "read"):
+            original = getattr(driver, name, None)
+            if original is None:
+                continue
+
+            def louder(*args, _f=original, _n=name, **kwargs):
+                try:
+                    return _f(*args, **kwargs)
+                except Exception as exc:                     # noqa: BLE001
+                    cause = exc.__cause__ or exc.__context__
+                    print("   usb %s failed: %r%s"
+                          % (_n, exc,
+                             "" if cause is None else "  caused by %r" % (cause,)))
+                    raise
+
+            setattr(driver, name, louder)
+        driver._jit_wrapped = True
+
+
 def set_file(camera, index: int, data: bytes):
     """One SET_FILE: write `data` to the path index resolves to."""
     payload = bytes([0x00, index, MODE_RAW]) + data
@@ -213,6 +255,7 @@ def set_file(camera, index: int, data: bytes):
 
 def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool,
         extra_reads=(), command: str | None = None) -> None:
+    widen_usb_timeout(camera)
     camera.readHasp()
     print("what is on the partition now (read-only):")
     list_area(camera)
