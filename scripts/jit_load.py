@@ -32,6 +32,7 @@ import os
 import pathlib
 import struct
 import sys
+import traceback
 
 
 def _bootstrap_pmca() -> str:
@@ -242,9 +243,22 @@ def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool,
                 return
         print("writing the library to %s (index %d):"
               % (KNOWN[FILE_LIBJIT], FILE_LIBJIT))
-        set_file(camera, FILE_LIBJIT, blob)
+        # One retry, because a transfer that dies mid-session has cost a power
+        # cycle more than once: the camera's USB stays dead until then, so a
+        # second attempt here is far cheaper than a second run.
+        for attempt in (1, 2):
+            try:
+                set_file(camera, FILE_LIBJIT, blob)
+                break
+            except Exception as exc:
+                print("   attempt %d failed: %s: %r"
+                      % (attempt, type(exc).__name__, exc))
+                if attempt == 2:
+                    raise
+                print("   retrying once")
     except Exception as exc:
-        print("SET_FILE refused: %s" % exc)
+        print("SET_FILE refused: %s: %r" % (type(exc).__name__, exc))
+        traceback.print_exc()
         print("(error codes: %s)" % ", ".join("%d=%s" % kv for kv in ERRORS.items()))
         return
 

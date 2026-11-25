@@ -177,7 +177,8 @@ static void scan(void)
     } else {
         unsigned long off = start & ~(4095UL);
         unsigned long endp = start + len;
-        int hits = 0;
+        unsigned long first_ok = 0, last_ok = 0;
+        int hits = 0, mapped = 0, failed = 0, shown = 0;
 
         at = append(report, at, "\n=== scanning ");
         at = put_hex(report, at, start);
@@ -198,13 +199,22 @@ static void scan(void)
                 map = (unsigned char *)sys6(SYS_mmap, 0, (long)want, PROT_READ,
                                             MAP_SHARED, fd, (long)off);
                 if (map == (unsigned char *)MAP_FAILED || (long)map < 0) {
-                    at = append(report, at, "  mmap failed at ");
-                    at = put_hex(report, at, off);
-                    at = append(report, at, "\n");
+                    failed++;
+                    if (shown < 8) {          /* a wall of these tells us nothing */
+                        at = append(report, at, "  mmap failed at ");
+                        at = put_hex(report, at, off);
+                        at = append(report, at, " errno -");
+                        at = put_u(report, at, (unsigned long)(-(long)map));
+                        at = append(report, at, "\n");
+                        shown++;
+                    }
                     if (want <= OVER) break;
                     off += WIN - OVER;
                     continue;
                 }
+                if (!mapped) first_ok = off;
+                last_ok = off + want;
+                mapped++;
                 {
                     unsigned long i, limit = want >= SIGLEN ? want - SIGLEN : 0;
                     for (i = 0; i < limit; i++) {
@@ -227,9 +237,22 @@ static void scan(void)
             }
             sys4(SYS_close, fd, 0, 0, 0);
         }
-        at = append(report, at, "hits: ");
+        at = append(report, at, "windows mapped: ");
+        at = put_u(report, at, (unsigned long)mapped);
+        at = append(report, at, ", failed: ");
+        at = put_u(report, at, (unsigned long)failed);
+        if (mapped) {
+            at = append(report, at, ", readable from ");
+            at = put_hex(report, at, first_ok);
+            at = append(report, at, " to ");
+            at = put_hex(report, at, last_ok);
+        }
+        at = append(report, at, "\nhits: ");
         at = put_u(report, at, (unsigned long)hits);
         at = append(report, at, "\n");
+        if (mapped && !hits)
+            at = append(report, at,
+                        "the signature is not in any window that mapped.\n");
     }
 
     fd = sys4(SYS_openat, AT_FDCWD, (long)REPORT, O_WRONLY | O_CREAT | O_TRUNC, 0644);
