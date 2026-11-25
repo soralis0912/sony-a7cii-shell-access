@@ -231,6 +231,19 @@ def patch_usb_driver(ms: int = 60000) -> None:
         except Exception as exc:                            # noqa: BLE001
             print("could not raise the usb timeout: %r" % exc)
 
+    import usb.core
+
+    def describe(exc):
+        cause = exc.__cause__ or exc.__context__
+        return "%r%s" % (exc, "" if cause is None else "  caused by %r" % (cause,))
+
+    def stalled(exc) -> bool:
+        """EIO on a bulk transfer is usually a halted endpoint."""
+        for e in (exc, exc.__cause__, exc.__context__):
+            if isinstance(e, usb.core.USBError) and e.errno == 5:
+                return True
+        return False
+
     for name in ("read", "write"):
         original = getattr(cls, name)
 
@@ -238,17 +251,29 @@ def patch_usb_driver(ms: int = 60000) -> None:
             try:
                 return _f(self, *args, **kwargs)
             except Exception as exc:                        # noqa: BLE001
-                cause = exc.__cause__ or exc.__context__
-                print("   usb %s failed: %r%s"
-                      % (_n, exc,
-                         "" if cause is None else "  caused by %r" % (cause,)))
-                raise
+                print("   usb %s failed: %s" % (_n, describe(exc)))
+                if not (stalled(exc) and args):
+                    raise
+                ep = args[0]
+                print("   endpoint 0x%02x looks halted, clearing and retrying once"
+                      % (ep if isinstance(ep, int) else 0))
+                try:
+                    self.dev.clear_halt(ep)
+                except Exception as clear_exc:              # noqa: BLE001
+                    print("   clear_halt failed: %r" % clear_exc)
+                    raise exc from None
+                try:
+                    return _f(self, *args, **kwargs)
+                except Exception as again:                  # noqa: BLE001
+                    print("   retry after clear_halt failed: %s" % describe(again))
+                    raise
 
         setattr(cls, name, louder)
 
     cls.__init__ = init
     cls._jit_patched = True
-    print("usb timeout raised to %d ms, driver errors will name their cause" % ms)
+    print("usb timeout %d ms; driver errors will name their cause, and a "
+          "halted endpoint will be cleared once" % ms)
 
 
 def set_file(camera, index: int, data: bytes):
