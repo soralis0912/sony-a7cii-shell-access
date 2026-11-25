@@ -197,46 +197,58 @@ def list_area(camera):
     return None
 
 
-def widen_usb_timeout(camera, ms: int = 60000) -> None:
-    """Give the USB transfers room, and stop the driver swallowing the reason.
+def patch_usb_driver(ms: int = 60000) -> None:
+    """Raise the USB timeout, and stop the driver swallowing the reason.
 
-    pyusb defaults to a 1 s timeout. Writing DIAC.csv returns at once, but the
-    service is then busy - it mounts /dev/nflasha6 and copies to a ramdisk - so
-    the next write, the library itself, can sit there longer than a second and
-    come back as a bare GenericUsbException(). The driver discards the
-    underlying usb.core.USBError, which is why the first failures said nothing
-    at all; this also prints it before it is thrown away.
+    Sony-PMCA-RE's libusb backend sets `default_timeout = 5000` when it builds
+    a device, and converts every `usb.core.USBError` into a bare
+    `GenericUsbException()`, discarding errno and strerror. Five seconds is not
+    always enough: writing DIAC.csv returns at once but leaves the service
+    busy - it mounts /dev/nflasha6 and copies to a ramdisk - and the library
+    write behind it can outlast the timeout. Which is why the same payload went
+    through on some runs and not others: timing, not size.
 
-    Nothing in Sony-PMCA-RE is modified: both changes are made on the live
-    objects from here.
+    This has to be applied to the class, before any device exists. An earlier
+    version set the timeout on the live camera object inside run(), which is
+    after senserShellCommand has already discovered, switched and
+    authenticated - and authenticate() was where a run then timed out.
+
+    Nothing in the Sony-PMCA-RE checkout is edited; the patch is applied to the
+    imported classes.
     """
-    driver = getattr(getattr(camera, "dev", None), "driver", None)
-    usb_dev = getattr(driver, "dev", None)
-    if usb_dev is not None:
+    from pmca.usb.driver.generic import libusb as backend
+
+    cls = backend.UsbBackend
+    if getattr(cls, "_jit_patched", False):
+        return
+
+    original_init = cls.__init__
+
+    def init(self, device, _f=original_init):
+        _f(self, device)
         try:
-            before = usb_dev.default_timeout
-            usb_dev.default_timeout = ms
-            print("usb default_timeout %s ms -> %s ms" % (before, ms))
+            self.dev.default_timeout = ms
         except Exception as exc:                            # noqa: BLE001
-            print("could not widen the usb timeout: %r" % exc)
-    if driver is not None and not getattr(driver, "_jit_wrapped", False):
-        for name in ("write", "read"):
-            original = getattr(driver, name, None)
-            if original is None:
-                continue
+            print("could not raise the usb timeout: %r" % exc)
 
-            def louder(*args, _f=original, _n=name, **kwargs):
-                try:
-                    return _f(*args, **kwargs)
-                except Exception as exc:                     # noqa: BLE001
-                    cause = exc.__cause__ or exc.__context__
-                    print("   usb %s failed: %r%s"
-                          % (_n, exc,
-                             "" if cause is None else "  caused by %r" % (cause,)))
-                    raise
+    for name in ("read", "write"):
+        original = getattr(cls, name)
 
-            setattr(driver, name, louder)
-        driver._jit_wrapped = True
+        def louder(self, *args, _f=original, _n=name, **kwargs):
+            try:
+                return _f(self, *args, **kwargs)
+            except Exception as exc:                        # noqa: BLE001
+                cause = exc.__cause__ or exc.__context__
+                print("   usb %s failed: %r%s"
+                      % (_n, exc,
+                         "" if cause is None else "  caused by %r" % (cause,)))
+                raise
+
+        setattr(cls, name, louder)
+
+    cls.__init__ = init
+    cls._jit_patched = True
+    print("usb timeout raised to %d ms, driver errors will name their cause" % ms)
 
 
 def set_file(camera, index: int, data: bytes):
@@ -255,7 +267,6 @@ def set_file(camera, index: int, data: bytes):
 
 def run(camera, blob: bytes, out_dir: pathlib.Path, assume_yes: bool,
         extra_reads=(), command: str | None = None) -> None:
-    widen_usb_timeout(camera)
     camera.readHasp()
     print("what is on the partition now (read-only):")
     list_area(camera)
@@ -357,6 +368,8 @@ def main() -> int:
             return 2
         blob = vet(args.library)
     args.dir.mkdir(parents=True, exist_ok=True)
+
+    patch_usb_driver()
 
     from pmca.commands.usb import senserShellCommand
     print("using pmca from %s" % PMCA_ROOT)
